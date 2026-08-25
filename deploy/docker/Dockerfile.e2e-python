@@ -1,0 +1,41 @@
+# E2E Python test runner for OpenShift gateways.
+#
+# Build:
+#   podman build -t openshell-e2e-python \
+#     -f deploy/docker/Dockerfile.e2e-python \
+#     --build-arg OPENSHELL_WHL=openshell-0.0.109+rhaiv.0-1-py3-none-linux_aarch64.whl .
+#
+# Run:
+#   podman run --rm \
+#     -v ~/.config/openshell:/home/e2e/.config/openshell:ro \
+#     -e OPENSHELL_GATEWAY=openshift \
+#     openshell-e2e-python
+
+FROM python:3.14-slim
+
+ARG OPENSHELL_WHL=openshell-*.whl
+
+RUN groupadd -r e2e && useradd -r -g e2e -m -s /bin/bash e2e
+
+WORKDIR /app
+
+# Install test dependencies
+RUN pip install --no-cache-dir \
+    pytest>=8.0 \
+    pytest-xdist>=3.0 \
+    pytest-asyncio>=0.23 \
+    pytest-cov>=4.0
+
+# Install the openshell wheel
+COPY ${OPENSHELL_WHL} /tmp/
+RUN pip install --no-cache-dir /tmp/${OPENSHELL_WHL} && rm /tmp/${OPENSHELL_WHL}
+
+# Copy the E2E test suite
+COPY --chown=e2e:e2e e2e/python/ /app/e2e/python/
+
+ENV PYTHONUNBUFFERED=1
+
+USER e2e
+
+ENTRYPOINT ["pytest", "-o", "python_files=test_*.py *_test.py", "-m", "not gpu", "-v"]
+CMD ["/app/e2e/python/"]

@@ -1,0 +1,469 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Keycloak (via the RHBK operator already installed in this namespace) for
+# running the e2e/python/oidc/ test suite against an OpenShift gateway.
+# Distinct from tasks/scripts/keycloak-k8s-setup.sh, which deploys plain
+# community Keycloak as a bare Deployment for k3s local dev — this uses the
+# RHBK Operator's Keycloak/KeycloakRealmImport CRs instead, since that's what
+# was installed on this cluster.
+#
+# Apply with: oc apply -f scripts/keycloak-openshift-rhbk.yaml -n openshell
+#
+# hostname.hostname is pinned to the in-cluster Service DNS name so the JWT
+# `iss` claim stays consistent regardless of how a token was obtained
+# externally (mirrors the KC_HOSTNAME approach in scripts/keycloak-dev.sh and
+# tasks/scripts/keycloak-k8s-setup.sh).
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-postgres
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-postgres-credentials
+type: Opaque
+stringData:
+  username: keycloak
+  password: keycloak-dev-password
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak-postgres
+  labels:
+    app.kubernetes.io/name: keycloak-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-postgres
+    spec:
+      serviceAccountName: keycloak-postgres
+      containers:
+        - name: postgres
+          image: mirror.gcr.io/library/postgres:17.10-alpine3.23@sha256:979c4379dd698aba0b890599a6104e082035f98ef31d9b9291ec22f2b13059ca
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-postgres-credentials
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-postgres-credentials
+                  key: password
+            - name: POSTGRES_DB
+              value: keycloak
+            # OpenShift assigns a random UID from the namespace range instead of
+            # running as the image's "postgres" user (UID 70). The postgres
+            # entrypoint fails to chmod /var/lib/postgresql/data because it is
+            # owned by UID 70. Setting PGDATA to a subdirectory causes postgres
+            # to mkdir+chmod a new directory it owns, which succeeds.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -ec
+                - pg_isready -U keycloak -d keycloak
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 20
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-run
+              mountPath: /var/run/postgresql
+      volumes:
+        - name: postgres-data
+          emptyDir: {}
+        - name: postgres-run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-postgres
+  labels:
+    app.kubernetes.io/name: keycloak-postgres
+spec:
+  selector:
+    app.kubernetes.io/name: keycloak-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+spec:
+  instances: 1
+  db:
+    vendor: postgres
+    host: keycloak-postgres
+    database: keycloak
+    usernameSecret:
+      name: keycloak-postgres-credentials
+      key: username
+    passwordSecret:
+      name: keycloak-postgres-credentials
+      key: password
+  http:
+    httpEnabled: true
+  hostname:
+    # A bare hostname plus strict: false lets Keycloak compute the JWT `iss`
+    # claim dynamically from the request's Host header, so a token fetched
+    # via the external Route gets a different issuer than one fetched
+    # in-cluster and the gateway rejects it with InvalidIssuer. A full URL
+    # (with port) plus strict: true pins `iss` to this exact value regardless
+    # of how the token was requested.
+    hostname: http://keycloak-service.openshell.svc.cluster.local:8080
+    strict: true
+---
+apiVersion: k8s.keycloak.org/v2beta1
+kind: KeycloakRealmImport
+metadata:
+  name: openshell-realm
+spec:
+  keycloakCRName: keycloak
+  realm:
+    realm: openshell
+    enabled: true
+    sslRequired: none
+    registrationAllowed: false
+    loginWithEmailAllowed: true
+    duplicateEmailsAllowed: false
+    resetPasswordAllowed: false
+    editUsernameAllowed: false
+    bruteForceProtected: false
+    accessTokenLifespan: 300
+    ssoSessionIdleTimeout: 1800
+    ssoSessionMaxLifespan: 36000
+    offlineSessionIdleTimeout: 2592000
+    roles:
+      realm:
+        - name: openshell-admin
+          description: Full administrative access to OpenShell
+        - name: openshell-user
+          description: Standard user access to OpenShell
+    defaultRoles:
+      - openshell-user
+    clientScopes:
+      - name: openid
+        description: OpenID Connect scope
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+        protocolMappers:
+          - name: sub
+            protocol: openid-connect
+            protocolMapper: oidc-sub-mapper
+            consentRequired: false
+            config:
+              introspection.token.claim: "true"
+              access.token.claim: "true"
+      - name: profile
+        description: "OpenID Connect built-in scope: profile"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+        protocolMappers:
+          - name: preferred_username
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-attribute-mapper
+            consentRequired: false
+            config:
+              user.attribute: username
+              claim.name: preferred_username
+              jsonType.label: String
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+          - name: given name
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-attribute-mapper
+            consentRequired: false
+            config:
+              user.attribute: firstName
+              claim.name: given_name
+              jsonType.label: String
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+          - name: family name
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-attribute-mapper
+            consentRequired: false
+            config:
+              user.attribute: lastName
+              claim.name: family_name
+              jsonType.label: String
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+          - name: full name
+            protocol: openid-connect
+            protocolMapper: oidc-full-name-mapper
+            consentRequired: false
+            config:
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+      - name: email
+        description: "OpenID Connect built-in scope: email"
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+        protocolMappers:
+          - name: email
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-attribute-mapper
+            consentRequired: false
+            config:
+              user.attribute: email
+              claim.name: email
+              jsonType.label: String
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+          - name: email verified
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-attribute-mapper
+            consentRequired: false
+            config:
+              user.attribute: emailVerified
+              claim.name: email_verified
+              jsonType.label: boolean
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+      - name: roles
+        description: OpenID Connect scope for roles
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "false"
+        protocolMappers:
+          - name: realm roles
+            protocol: openid-connect
+            protocolMapper: oidc-usermodel-realm-role-mapper
+            consentRequired: false
+            config:
+              multivalued: "true"
+              claim.name: realm_access.roles
+              jsonType.label: String
+              id.token.claim: "true"
+              access.token.claim: "true"
+              userinfo.token.claim: "true"
+      - name: web-origins
+        description: OpenID Connect scope for allowed web origins
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "false"
+        protocolMappers:
+          - name: allowed web origins
+            protocol: openid-connect
+            protocolMapper: oidc-allowed-origins-mapper
+            consentRequired: false
+            config: {}
+      - name: acr
+        description: OpenID Connect scope for ACR
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "false"
+      - name: "sandbox:read"
+        description: Read sandbox resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "sandbox:write"
+        description: Write sandbox resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "provider:read"
+        description: Read provider resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "provider:write"
+        description: Write provider resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "config:read"
+        description: Read configuration resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "config:write"
+        description: Write configuration resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "inference:read"
+        description: Read inference resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "inference:write"
+        description: Write inference resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "workspace:read"
+        description: Read workspace resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "workspace:write"
+        description: Write workspace resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+      - name: "openshell:all"
+        description: Full access to all OpenShell resources
+        protocol: openid-connect
+        attributes:
+          include.in.token.scope: "true"
+          display.on.consent.screen: "true"
+    clients:
+      - clientId: openshell-cli
+        name: OpenShell CLI
+        description: Public client for interactive CLI login (Authorization Code + PKCE)
+        enabled: true
+        publicClient: true
+        standardFlowEnabled: true
+        directAccessGrantsEnabled: true
+        serviceAccountsEnabled: false
+        redirectUris:
+          - "http://127.0.0.1:*"
+          - "http://localhost:*"
+        webOrigins:
+          - "http://127.0.0.1:*"
+          - "http://localhost:*"
+        attributes:
+          pkce.code.challenge.method: S256
+        protocol: openid-connect
+        fullScopeAllowed: true
+        protocolMappers:
+          - name: openshell-cli audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: openshell-cli
+              id.token.claim: "true"
+              access.token.claim: "true"
+              introspection.token.claim: "true"
+        defaultClientScopes:
+          - openid
+          - profile
+          - email
+          - roles
+          - web-origins
+          - acr
+        optionalClientScopes:
+          - "sandbox:read"
+          - "sandbox:write"
+          - "provider:read"
+          - "provider:write"
+          - "config:read"
+          - "config:write"
+          - "inference:read"
+          - "inference:write"
+          - "workspace:read"
+          - "workspace:write"
+          - "openshell:all"
+      - clientId: openshell-ci
+        name: OpenShell CI
+        description: Confidential client for CI/automation (Client Credentials grant)
+        enabled: true
+        publicClient: false
+        secret: ci-test-secret
+        standardFlowEnabled: false
+        directAccessGrantsEnabled: false
+        serviceAccountsEnabled: true
+        protocol: openid-connect
+        fullScopeAllowed: true
+        protocolMappers:
+          - name: openshell-ci audience
+            protocol: openid-connect
+            protocolMapper: oidc-audience-mapper
+            consentRequired: false
+            config:
+              included.client.audience: openshell-cli
+              id.token.claim: "true"
+              access.token.claim: "true"
+              introspection.token.claim: "true"
+        defaultClientScopes:
+          - openid
+          - profile
+          - email
+          - roles
+          - web-origins
+          - acr
+          - "openshell:all"
+    users:
+      - username: admin@test
+        email: admin@test
+        emailVerified: true
+        enabled: true
+        firstName: Admin
+        lastName: User
+        credentials:
+          - type: password
+            value: admin
+            temporary: false
+        realmRoles:
+          - openshell-admin
+          - openshell-user
+      - username: user@test
+        email: user@test
+        emailVerified: true
+        enabled: true
+        firstName: Regular
+        lastName: User
+        credentials:
+          - type: password
+            value: user
+            temporary: false
+        realmRoles:
+          - openshell-user
+      - username: user-b@test
+        email: user-b@test
+        emailVerified: true
+        enabled: true
+        firstName: Second
+        lastName: User
+        credentials:
+          - type: password
+            value: user-b
+            temporary: false
+        realmRoles:
+          - openshell-user
