@@ -446,7 +446,34 @@ tags and gating stable promotion on qualification results are part of
 [RFC 0014](../rfc/0014-release-stability/release-qualification.md) and are not
 implemented yet.
 
-See `CI.md` for the contributor workflow, labels, and maintainer merge-queue workflow.
+## Artifact Scanning
+
+Two entry points share `tasks/scripts/trivy-scan.sh`: a standalone analysis
+workflow and a pull-request change gate. Nix supplies Trivy, Helm and `yq`.
+
+The standalone workflow scans deployment configuration and supplied OCI
+references independently of release publication. Detailed JSON reports feed the
+differential gate; the summary and published SARIF consolidate configuration
+findings across profiles while preserving resource identity and affected profiles.
+Images and packaged charts retain separate identities based on their full
+references. Publication batches respect GitHub's limit of 20 SARIF runs.
+
+The PR/merge-group gate scans base and candidate with the same scanner and rejects
+new `HIGH` or `CRITICAL` configuration findings. Its stable
+`OpenShell / Trivy Changes` status succeeds when nothing relevant changed.
+Image CVEs need the standalone scan. The reporting and gate invariants are:
+
+- A structurally invalid Trivy report is an error, not an empty finding set.
+- Scanner failures prevent publication of incomplete analyses; findings alone
+  do not prevent publishing complete reports.
+- Findings compare per profile against the same baseline profile, by semantic
+  identity and count rather than line number; a profile absent from the baseline
+  falls back to that identity's maximum across all profiles.
+- The candidate's ignore file is validated, but the baseline's policy applies to
+  both scans, so an exemption takes effect only after merge.
+
+See [CI.md](../CI.md#artifact-scanning) for profiles, report paths, severity
+settings, exceptions, and the contributor and maintainer workflows.
 
 ## Docs Site
 
