@@ -7,11 +7,11 @@ metadata:
   version: "1.0"
 artifacts:
   # Rust toolchain x86_64
-  - download_url: https://static.rust-lang.org/dist/rust-1.92.0-x86_64-unknown-linux-gnu.tar.xz
-    checksum: "sha256:d2ccef59dd9f7439f2c694948069f789a044dc1addcc0803613232af8f88ee0c"
-    filename: rust-1.92.0-x86_64-unknown-linux-gnu.tar.xz
+  - download_url: https://static.rust-lang.org/dist/rust-1.95.0-x86_64-unknown-linux-gnu.tar.xz
+    checksum: "sha256:2e0338f18ecbaa4a0f631b9e80e8b8e26bb6fe77dd5454fba8a70cf96c1e84a1"
+    filename: rust-1.95.0-x86_64-unknown-linux-gnu.tar.xz
 
   # Rust toolchain aarch64
-  - download_url: https://static.rust-lang.org/dist/rust-1.92.0-aarch64-unknown-linux-gnu.tar.xz
-    checksum: "sha256:3e383f8b4fca710d0600d0c1de97b78281672be2cda6575ecbe1c183a12e3822"
-    filename: rust-1.92.0-aarch64-unknown-linux-gnu.tar.xz
+  - download_url: https://static.rust-lang.org/dist/rust-1.95.0-aarch64-unknown-linux-gnu.tar.xz
+    checksum: "sha256:094c9c36531911c5cc7dd6ab2d3069ab8dcd744d6239b0bda1387b243dfc391e"
+    filename: rust-1.95.0-aarch64-unknown-linux-gnu.tar.xz

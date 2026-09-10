@@ -11,17 +11,29 @@
 #
 # Local build:  ./deploy/konflux/build-local.sh gateway
 
+ARG RUST_VERSION=1.95.0
+
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
 FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:25a147defd01e19674714f55d17538c8dbe55d8c305fa157ecc3f9c8977b05b6 AS builder
 
+ARG RUST_VERSION
+ARG TARGETARCH
+
 RUN dnf install -y --nodocs --setopt=install_weak_deps=0 \
-        rust cargo \
         gcc gcc-c++ make cmake \
-        openssl-devel git-core clang-devel \
+        openssl-devel git-core clang-devel tar xz \
         gcc-toolset-14 gcc-toolset-14-gcc-c++ \
     && dnf clean all
+
+# UBI9 ships rust 1.92.0, below the workspace MSRV, so install the prefetched
+# upstream toolchain (GNU target) the same way the CLI and supervisor images do.
+RUN RUST_ARCH=$(case "${TARGETARCH}" in amd64) echo x86_64;; arm64) echo aarch64;; *) echo "${TARGETARCH}";; esac) && \
+    mkdir -p /tmp/rust-toolchain && \
+    tar xJf /cachi2/output/deps/generic/rust-${RUST_VERSION}-${RUST_ARCH}-unknown-linux-gnu.tar.xz -C /tmp/rust-toolchain --strip-components=1 && \
+    /tmp/rust-toolchain/install.sh --prefix=/usr/local && \
+    rm -rf /tmp/rust-toolchain
 
 # gcc-toolset-14 provides C++20 <format> header required by bundled Z3.
 # Same pattern as ~/git/builder (AIPCC-10154).
