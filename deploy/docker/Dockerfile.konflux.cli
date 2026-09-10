@@ -75,8 +75,11 @@ RUN . /tmp/build-env && \
 # ---------------------------------------------------------------------------
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8@sha256:7fbeae18dc9476399f565e68255f602a3374ea8614ba3d14843565131a13ff93
 
-RUN microdnf install -y --nodocs ca-certificates \
+RUN microdnf install -y --nodocs ca-certificates crypto-policies-scripts \
     && microdnf clean all
+
+# Enable post-quantum cryptography support in the RHEL system policy.
+RUN update-crypto-policies --set DEFAULT:PQ
 
 COPY --from=builder --chmod=0555 /build/output/openshell /usr/local/bin/openshell
 

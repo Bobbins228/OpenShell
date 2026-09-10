@@ -38,6 +38,7 @@ packages:
   - openssl-devel
   - git-core
   # Runtime stage: network enforcement
+  - crypto-policies-scripts
   - nftables
   - iptables-nft
   # Runtime stage: network namespace setup
