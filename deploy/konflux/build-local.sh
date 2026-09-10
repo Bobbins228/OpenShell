@@ -126,6 +126,7 @@ build_image() {
         "${REPO_ROOT}"
 
     echo "=== ${component} built successfully ==="
+    test "$(podman run --rm --user=0 --entrypoint /usr/bin/update-crypto-policies "openshell-${component}-konflux" --show)" = "DEFAULT:PQ"
     podman run --rm --platform "${PLATFORM}" "openshell-${component}-konflux" --help 2>&1 | head -3
     echo ""
 }

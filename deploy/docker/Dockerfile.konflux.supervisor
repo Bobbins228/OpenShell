@@ -85,11 +85,15 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8@sha256:7fbeae18dc9476399f56
 ARG TARGETARCH
 
 RUN microdnf install -y --nodocs --setopt=install_weak_deps=0 \
+        crypto-policies-scripts \
         nftables \
         iptables-nft \
         iproute \
         util-linux-core \
     && microdnf clean all
+
+# Enable post-quantum cryptography support in the RHEL system policy.
+RUN update-crypto-policies --set DEFAULT:PQ
 
 # Copy the fully-static binary produced by the builder stage.
 COPY --from=builder --chmod=0555 /build/output/openshell-sandbox /openshell-sandbox
