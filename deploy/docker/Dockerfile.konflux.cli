@@ -15,7 +15,7 @@
 #
 # Local build:  ./deploy/konflux/build-local.sh cli
 
-ARG RUST_VERSION=1.92.0
+ARG RUST_VERSION=1.95.0
 
 # ---------------------------------------------------------------------------
 # Build stage: compile CLI (fully-static glibc binary)

@@ -22,9 +22,11 @@ contentOrigin:
     - repoid: ubi-9-appstream-rpms
       baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/appstream/os/
 packages:
-  # Build stage: Rust toolchain
-  - rust
-  - cargo
+  # Build stage: Rust toolchain is prefetched from static.rust-lang.org (see
+  # generic-fetcher.yaml); UBI9 ships rust 1.92.0, below the workspace MSRV.
+  # tar/xz extract the toolchain tarball.
+  - tar
+  - xz
   # Build stage: C/C++ toolchain
   - gcc
   - gcc-c++
