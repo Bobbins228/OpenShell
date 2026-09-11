@@ -4172,6 +4172,7 @@ dependencies = [
  "futures",
  "noyalib",
  "openshell-core",
+ "openshell-ocsf",
  "openshell-policy",
  "serde",
  "serde_json",
@@ -4182,6 +4183,7 @@ dependencies = [
  "tonic",
  "tracing",
  "uuid",
+ "windows",
 ]
 
 [[package]]
@@ -4567,6 +4569,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "tracing-appender",
  "tracing-opentelemetry",
  "tracing-subscriber",
  "url",
@@ -5812,6 +5815,7 @@ dependencies = [
  "log",
  "percent-encoding",
  "pin-project-lite",
+ "quinn",
  "rustls",
  "rustls-native-certs",
  "rustls-pki-types",
@@ -6124,6 +6128,7 @@ dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
