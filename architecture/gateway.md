@@ -53,6 +53,15 @@ The gateway validates this requirement before constructing the selected driver.
 
 ## Protocol and Auth
 
+Gateway validation and concurrency errors use the standard rich gRPC error
+envelope. Shared field validators attach `google.rpc.BadRequest`, and conditional
+write conflicts attach `google.rpc.ErrorInfo` with a stable reason and current
+version when available. `google.rpc.RetryInfo` expresses a minimum retry delay;
+it does not establish that a mutation is safe to repeat. SDKs retain the original
+transport status, metadata, and unknown details alongside decoded fields.
+Python cleanup inspects the original gRPC call beneath a typed error wrapper,
+preserving missing-resource handling without suppressing other failures.
+
 The gateway listens on one service port and multiplexes gRPC and HTTP traffic.
 The default local single-user deployment mode is mTLS user authentication:
 clients present a certificate signed by the local deployment CA, and the
@@ -215,7 +224,7 @@ Supported auth modes:
 | Plaintext | Local development or a trusted reverse proxy boundary. |
 | Unauthenticated local users | Trusted Kubernetes dev or fully trusted proxy deployments only. |
 | Cloudflare JWT | Edge-authenticated deployments where Cloudflare Access supplies identity. |
-| OIDC | Bearer-token auth for users, with browser or device-code PKCE and client credentials login. JWKS validation accepts RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, and EdDSA (Ed25519) signing keys. |
+| OIDC | Bearer-token auth for users, with browser or device-code PKCE and client credentials login. Discovery and JWKS retrieval require HTTPS, reject redirects, and pin JWKS to the issuer origin or an explicit origin allowlist. JWKS validation accepts RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, and EdDSA (Ed25519) signing keys. |
 
 The CLI persists the scopes requested during OIDC login in gateway metadata and
 reuses them when refreshing an access token. This preserves the intended API
