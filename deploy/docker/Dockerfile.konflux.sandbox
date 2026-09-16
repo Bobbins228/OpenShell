@@ -1,0 +1,109 @@
+# syntax=docker/dockerfile:1.4
+
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Sandbox runtime image for RHEL/Konflux (hermetic build).
+#
+# Compute drivers copy or mount /openshell-sandbox from this image and run it
+# inside arbitrary agent workloads (Alpine, Debian, distroless, UBI), so it
+# MUST be a fully-static binary. It is built against glibc with
+# `-C target-feature=+crt-static` using Red Hat's glibc-static package
+# (CodeReady Builder), so the build has no dependency on musl.
+#
+# Requires prefetched dependencies via Hermeto (cargo, rpm, generic).
+# See deploy/konflux/ for prefetch configs.
+#
+# Local build:  ./deploy/konflux/build-local.sh sandbox
+
+ARG RUST_VERSION=1.95.0
+
+# ---------------------------------------------------------------------------
+# Build stage: compile sandbox runtime (fully-static glibc binary)
+# ---------------------------------------------------------------------------
+FROM registry.access.redhat.com/ubi9/ubi:9.8@sha256:25a147defd01e19674714f55d17538c8dbe55d8c305fa157ecc3f9c8977b05b6 AS builder
+
+ARG RUST_VERSION
+ARG TARGETARCH
+
+RUN dnf install -y --nodocs --setopt=install_weak_deps=0 \
+        gcc gcc-c++ make cmake \
+        glibc-static \
+        openssl-devel git-core xz \
+    && dnf clean all
+
+# Extract the Rust toolchain (GNU target) and record the target triple. The
+# GNU rust-std shipped with the toolchain is reused; no musl std is needed.
+RUN RUST_ARCH=$(case "${TARGETARCH}" in amd64) echo x86_64;; arm64) echo aarch64;; *) echo "${TARGETARCH}";; esac) && \
+    RUST_TRIPLE="${RUST_ARCH}-unknown-linux-gnu" && \
+    mkdir -p /tmp/rust-toolchain && \
+    tar xJf /cachi2/output/deps/generic/rust-${RUST_VERSION}-${RUST_TRIPLE}.tar.xz -C /tmp/rust-toolchain --strip-components=1 && \
+    /tmp/rust-toolchain/install.sh --prefix=/usr/local && \
+    rm -rf /tmp/rust-toolchain && \
+    echo "RUST_TARGET=${RUST_TRIPLE}" > /tmp/build-env
+
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY .cargo/ .cargo/
+COPY crates/ crates/
+COPY proto/ proto/
+
+# Version stamped into the binary via openshell-core::VERSION; tag builds
+# pass the git tag with the leading "v" stripped. Empty otherwise.
+ARG OPENSHELL_VERSION=""
+
+# `-C target-feature=+crt-static` links glibc statically, producing a
+# fully-static binary with no runtime libc dependency. It is static-PIE on
+# x86_64; rustc does not support static-PIE for aarch64-unknown-linux-gnu, so
+# the arm64 binary is static but not position-independent.
+#
+# No feature flags: openshell-sandbox has no default features and depends on
+# openshell-core without its default (telemetry) feature.
+#
+# Fail the build if the binary requests a dynamic loader: the runtime stage has
+# glibc, so a smoke test there would not catch a non-static binary.
+RUN . /tmp/build-env && \
+    VER="${OPENSHELL_VERSION#v}" && \
+    if [ -n "$VER" ]; then export OPENSHELL_GIT_VERSION="$VER"; fi && \
+    RUSTFLAGS="-C target-feature=+crt-static" \
+    cargo build --release \
+        --target "${RUST_TARGET}" \
+        --package openshell-sandbox \
+        --bin openshell-sandbox && \
+    mkdir -p /build/output && \
+    cp /build/target/${RUST_TARGET}/release/openshell-sandbox /build/output/ && \
+    readelf -l /build/output/openshell-sandbox > /tmp/program-headers && \
+    if grep -q 'Requesting program interpreter' /tmp/program-headers; then \
+        echo "openshell-sandbox is not statically linked" >&2; exit 1; \
+    fi
+
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+# ubi-micro with no extra RPMs: the Podman driver mounts this whole image into
+# every workload, so keep it small. Unlike the other Konflux images, it does
+# not set the DEFAULT:PQ crypto policy: the static binary uses its own TLS
+# stack and never reads the system policy.
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.8@sha256:7a0454cbd9bd847e8f6a63b6f0254a6efbeb6e0ed71a5d824a4f6cccbe626650
+
+# Keep the binary root-owned for image-volume mounts and executable by the
+# sandbox runtime's non-root UID.
+COPY --from=builder --chmod=0555 /build/output/openshell-sandbox /openshell-sandbox
+
+LABEL com.redhat.component="odh-openshell-sandbox-container" \
+      description="Statically linked (glibc) sandbox runtime for OpenShell, injected into arbitrary agent workloads" \
+      summary="Statically linked (glibc) sandbox runtime for OpenShell, injected into arbitrary agent workloads" \
+      name="rhoai/odh-openshell-sandbox-rhel9" \
+      maintainer="['managed-open-data-hub@redhat.com']" \
+      io.openshift.expose-services="" \
+      io.k8s.display-name="odh-openshell-sandbox" \
+      io.k8s.description="odh-openshell-sandbox" \
+      com.redhat.license_terms="https://www.redhat.com/licenses/Red_Hat_Standard_EULA_20191108.pdf"
+
+# Drivers may override this identity to match the admitted workload. Keep the
+# standalone image non-root by default.
+USER 65532:65532
+
+ENTRYPOINT ["/openshell-sandbox"]

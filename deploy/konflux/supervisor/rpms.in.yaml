@@ -37,14 +37,8 @@ packages:
   - cmake
   - openssl-devel
   - git-core
-  # Runtime stage: network enforcement
+  # Runtime stage
   - crypto-policies-scripts
-  - nftables
-  - iptables-nft
-  # Runtime stage: network namespace setup
-  - iproute
-  # Runtime stage: namespace entry
-  - util-linux-core
 arches:
   - x86_64
   - aarch64

@@ -340,34 +340,6 @@ arches:
     name: gzip
     evr: 1.12-2.el9_8
     sourcerpm: gzip-1.12-2.el9_8.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/i/iproute-6.17.0-2.el9.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 899705
-    checksum: sha256:39b4f03d65fdcf8b5ea922b6d8de51c969f9c531af4264be4e56c2f13871064e
-    name: iproute
-    evr: 6.17.0-2.el9
-    sourcerpm: iproute-6.17.0-2.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/i/iptables-libs-1.8.10-11.el9_5.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 477723
-    checksum: sha256:73eadf9d16ea9ebb340664873522ef83ad0c28106751783d61c6315a8f0d466f
-    name: iptables-libs
-    evr: 1.8.10-11.el9_5
-    sourcerpm: iptables-1.8.10-11.el9_5.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/i/iptables-nft-1.8.10-11.el9_5.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 212143
-    checksum: sha256:5789f27966252aadd8bf0eae25d324defc2528312ff21b21c4ddb80d1c0b104d
-    name: iptables-nft
-    evr: 1.8.10-11.el9_5
-    sourcerpm: iptables-1.8.10-11.el9_5.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/j/jansson-2.14-1.el9.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 50251
-    checksum: sha256:7c002eb9c81bad49b8a11d9790af6220cce5fb882be7ca11335882d079d1473f
-    name: jansson
-    evr: 2.14-1.el9
-    sourcerpm: jansson-2.14-1.el9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/j/json-c-0.14-11.el9.aarch64.rpm
     repoid: ubi-9-baseos-rpms
     size: 45052
@@ -431,13 +403,6 @@ arches:
     name: libblkid
     evr: 2.37.4-25.el9
     sourcerpm: util-linux-2.37.4-25.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libbpf-1.5.0-3.el9.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 188694
-    checksum: sha256:2a9b81f70ed90d0f711f9f47db6437124b30f89d1c4b009b2fa961684e2b3eb8
-    name: libbpf
-    evr: 2:1.5.0-3.el9
-    sourcerpm: libbpf-1.5.0-3.el9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libbrotli-1.0.9-9.el9_7.aarch64.rpm
     repoid: ubi-9-baseos-rpms
     size: 325179
@@ -501,13 +466,13 @@ arches:
     name: libedit
     evr: 3.1-39.20210216cvs.el9
     sourcerpm: libedit-3.1-39.20210216cvs.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libevent-2.1.12-8.el9_4.aarch64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libevent-2.1.13-1.el9_8.aarch64.rpm
     repoid: ubi-9-baseos-rpms
-    size: 265763
-    checksum: sha256:0858687ac9d55a0db78ecc4f669ad21ccba6815744457d135f5a313898dfcab7
+    size: 268476
+    checksum: sha256:27a85302d64c15bfd383929eedcdeabef9bfc8f0a1e085b0501d0de73cb2bf74
     name: libevent
-    evr: 2.1.12-8.el9_4
-    sourcerpm: libevent-2.1.12-8.el9_4.src.rpm
+    evr: 2.1.13-1.el9_8
+    sourcerpm: libevent-2.1.13-1.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libfdisk-2.37.4-25.el9.aarch64.rpm
     repoid: ubi-9-baseos-rpms
     size: 156711
@@ -564,13 +529,6 @@ arches:
     name: libidn2
     evr: 2.3.0-7.el9
     sourcerpm: libidn2-2.3.0-7.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libmnl-1.0.4-16.el9_4.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 30479
-    checksum: sha256:b07344f5116a1913e746042748b05f978d284833282d9633e29f3d595ab596e9
-    name: libmnl
-    evr: 1.0.4-16.el9_4
-    sourcerpm: libmnl-1.0.4-16.el9_4.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libmount-2.37.4-25.el9.aarch64.rpm
     repoid: ubi-9-baseos-rpms
     size: 140081
@@ -578,27 +536,6 @@ arches:
     name: libmount
     evr: 2.37.4-25.el9
     sourcerpm: util-linux-2.37.4-25.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libnetfilter_conntrack-1.0.9-1.el9.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 61151
-    checksum: sha256:28d0047c487c8d8bc6b9544fa0a6ac837a50c309641c689e834a4959d6f1ac01
-    name: libnetfilter_conntrack
-    evr: 1.0.9-1.el9
-    sourcerpm: libnetfilter_conntrack-1.0.9-1.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libnfnetlink-1.0.1-23.el9_5.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 31790
-    checksum: sha256:3bc75fd1a2cf80c51709901538ad65555406ffb0805a91fd59ce02f1a8ddd67c
-    name: libnfnetlink
-    evr: 1.0.1-23.el9_5
-    sourcerpm: libnfnetlink-1.0.1-23.el9_5.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libnftnl-1.2.6-4.el9_4.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 88780
-    checksum: sha256:3e5aa1f38999f45d1720a28af8363a0989e41e8627d70cb18556f2c96841700f
-    name: libnftnl
-    evr: 1.2.6-4.el9_4
-    sourcerpm: libnftnl-1.2.6-4.el9_4.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libnghttp2-1.43.0-6.el9_8.2.aarch64.rpm
     repoid: ubi-9-baseos-rpms
     size: 79650
@@ -774,13 +711,6 @@ arches:
     name: ncurses-libs
     evr: 6.2-12.20210508.el9
     sourcerpm: ncurses-6.2-12.20210508.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/n/nftables-1.0.9-9.el9_8.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 467195
-    checksum: sha256:71080fba834245674aa5ed3badf2cb675254b1860fc585d28dd88829b2d5a43a
-    name: nftables
-    evr: 1:1.0.9-9.el9_8
-    sourcerpm: nftables-1.0.9-9.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/o/openldap-2.6.8-4.el9.aarch64.rpm
     repoid: ubi-9-baseos-rpms
     size: 291500
@@ -893,13 +823,6 @@ arches:
     name: pkgconf-pkg-config
     evr: 1.7.3-10.el9
     sourcerpm: pkgconf-1.7.3-10.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/p/psmisc-23.4-3.el9.aarch64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 252522
-    checksum: sha256:609ffc1ea49d733bf2fabf521851acf20e62cd873c3679f735bc7486b2434359
-    name: psmisc
-    evr: 23.4-3.el9
-    sourcerpm: psmisc-23.4-3.el9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/p/publicsuffix-list-dafsa-20210518-3.el9.noarch.rpm
     repoid: ubi-9-baseos-rpms
     size: 60882
@@ -1387,34 +1310,6 @@ arches:
     name: gzip
     evr: 1.12-2.el9_8
     sourcerpm: gzip-1.12-2.el9_8.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/i/iproute-6.17.0-2.el9.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 894459
-    checksum: sha256:008c615c830a69009a560ce44d9eb5924a793ee89b977856a91f1b7099bad1d5
-    name: iproute
-    evr: 6.17.0-2.el9
-    sourcerpm: iproute-6.17.0-2.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/i/iptables-libs-1.8.10-11.el9_5.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 476678
-    checksum: sha256:3e79ca4cc3d35c1f1e0ac6c9f05c5be56b7ab6dd1f8ae719a21ec1b9e3bfa018
-    name: iptables-libs
-    evr: 1.8.10-11.el9_5
-    sourcerpm: iptables-1.8.10-11.el9_5.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/i/iptables-nft-1.8.10-11.el9_5.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 214056
-    checksum: sha256:54e031813637738af285ff4b1c2e4a20b913f2ea643a29940a07ccaf8bd197f5
-    name: iptables-nft
-    evr: 1.8.10-11.el9_5
-    sourcerpm: iptables-1.8.10-11.el9_5.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/j/jansson-2.14-1.el9.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 49137
-    checksum: sha256:4e9aec51ee46d7265d6edd1245b5d5ab5e8336dc2a4ca17f2cace2ce8bae3761
-    name: jansson
-    evr: 2.14-1.el9
-    sourcerpm: jansson-2.14-1.el9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/j/json-c-0.14-11.el9.x86_64.rpm
     repoid: ubi-9-baseos-rpms
     size: 46136
@@ -1471,13 +1366,6 @@ arches:
     name: libblkid
     evr: 2.37.4-25.el9
     sourcerpm: util-linux-2.37.4-25.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libbpf-1.5.0-3.el9.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 188749
-    checksum: sha256:72673b289f5b720462aca02125411285b259139988be54dff7646d7639f7b26d
-    name: libbpf
-    evr: 2:1.5.0-3.el9
-    sourcerpm: libbpf-1.5.0-3.el9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libbrotli-1.0.9-9.el9_7.x86_64.rpm
     repoid: ubi-9-baseos-rpms
     size: 326278
@@ -1541,13 +1429,13 @@ arches:
     name: libedit
     evr: 3.1-39.20210216cvs.el9
     sourcerpm: libedit-3.1-39.20210216cvs.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libevent-2.1.12-8.el9_4.x86_64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libevent-2.1.13-1.el9_8.x86_64.rpm
     repoid: ubi-9-baseos-rpms
-    size: 272588
-    checksum: sha256:072426910a254b797bbe977b3397ab90513911d020580a0135179f700a48df44
+    size: 276162
+    checksum: sha256:c28b28573118d5cf0f1f68d96bc7c46d56671e45360698c894ca06ddf40163ae
     name: libevent
-    evr: 2.1.12-8.el9_4
-    sourcerpm: libevent-2.1.12-8.el9_4.src.rpm
+    evr: 2.1.13-1.el9_8
+    sourcerpm: libevent-2.1.13-1.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libfdisk-2.37.4-25.el9.x86_64.rpm
     repoid: ubi-9-baseos-rpms
     size: 161769
@@ -1604,13 +1492,6 @@ arches:
     name: libidn2
     evr: 2.3.0-7.el9
     sourcerpm: libidn2-2.3.0-7.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libmnl-1.0.4-16.el9_4.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 30949
-    checksum: sha256:badfd4eb5b7cd3622da84168674002ec718ef810ce615a1113d3e19e265b777e
-    name: libmnl
-    evr: 1.0.4-16.el9_4
-    sourcerpm: libmnl-1.0.4-16.el9_4.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libmount-2.37.4-25.el9.x86_64.rpm
     repoid: ubi-9-baseos-rpms
     size: 142467
@@ -1618,27 +1499,6 @@ arches:
     name: libmount
     evr: 2.37.4-25.el9
     sourcerpm: util-linux-2.37.4-25.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libnetfilter_conntrack-1.0.9-1.el9.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 62066
-    checksum: sha256:beeb73e78390077c6afd9ed6177bad8bad278dbfaae9d90edf7243cdf6a44a3f
-    name: libnetfilter_conntrack
-    evr: 1.0.9-1.el9
-    sourcerpm: libnetfilter_conntrack-1.0.9-1.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libnfnetlink-1.0.1-23.el9_5.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 32236
-    checksum: sha256:177882bfe48c9c9effc7b1bce6b58b2466988c53e400c07fb1ba2d3a4ebe6f40
-    name: libnfnetlink
-    evr: 1.0.1-23.el9_5
-    sourcerpm: libnfnetlink-1.0.1-23.el9_5.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libnftnl-1.2.6-4.el9_4.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 91380
-    checksum: sha256:e64d7b270be4be36af80ed220852cb760a1069e34667b1ba9eec7a02762a14bf
-    name: libnftnl
-    evr: 1.2.6-4.el9_4
-    sourcerpm: libnftnl-1.2.6-4.el9_4.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libnghttp2-1.43.0-6.el9_8.2.x86_64.rpm
     repoid: ubi-9-baseos-rpms
     size: 80410
@@ -1814,13 +1674,6 @@ arches:
     name: ncurses-libs
     evr: 6.2-12.20210508.el9
     sourcerpm: ncurses-6.2-12.20210508.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/n/nftables-1.0.9-9.el9_8.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 473262
-    checksum: sha256:c2ed618abe918bb6f8f4ce93ab0654289edf51693fc4bd15350ab71c54198f19
-    name: nftables
-    evr: 1:1.0.9-9.el9_8
-    sourcerpm: nftables-1.0.9-9.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openldap-2.6.8-4.el9.x86_64.rpm
     repoid: ubi-9-baseos-rpms
     size: 296805
@@ -1933,13 +1786,6 @@ arches:
     name: pkgconf-pkg-config
     evr: 1.7.3-10.el9
     sourcerpm: pkgconf-1.7.3-10.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/p/psmisc-23.4-3.el9.x86_64.rpm
-    repoid: ubi-9-baseos-rpms
-    size: 253357
-    checksum: sha256:30ad5408417c7f06fb945dc321bef3ce31f813f25389707dd1efa7c1d337b806
-    name: psmisc
-    evr: 23.4-3.el9
-    sourcerpm: psmisc-23.4-3.el9.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/p/publicsuffix-list-dafsa-20210518-3.el9.noarch.rpm
     repoid: ubi-9-baseos-rpms
     size: 60882
