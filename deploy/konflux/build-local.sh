@@ -9,6 +9,7 @@
 # Usage:
 #   ./deploy/konflux/build-local.sh gateway
 #   ./deploy/konflux/build-local.sh supervisor
+#   ./deploy/konflux/build-local.sh sandbox
 #   ./deploy/konflux/build-local.sh all
 #
 # Override architecture (default: host arch via uname -m):
@@ -48,6 +49,10 @@ build_image() {
         supervisor)
             dockerfile="deploy/docker/Dockerfile.konflux.supervisor"
             konfig_dir="deploy/konflux/supervisor"
+            ;;
+        sandbox)
+            dockerfile="deploy/docker/Dockerfile.konflux.sandbox"
+            konfig_dir="deploy/konflux/sandbox"
             ;;
         cli)
             dockerfile="deploy/docker/Dockerfile.konflux.cli"
@@ -126,13 +131,16 @@ build_image() {
         "${REPO_ROOT}"
 
     echo "=== ${component} built successfully ==="
-    test "$(podman run --rm --user=0 --entrypoint /usr/bin/update-crypto-policies "openshell-${component}-konflux" --show)" = "DEFAULT:PQ"
+    # The sandbox runtime image is ubi-micro without crypto-policies.
+    if [[ "${component}" != "sandbox" ]]; then
+        test "$(podman run --rm --user=0 --entrypoint /usr/bin/update-crypto-policies "openshell-${component}-konflux" --show)" = "DEFAULT:PQ"
+    fi
     podman run --rm --platform "${PLATFORM}" "openshell-${component}-konflux" --help 2>&1 | head -3
     echo ""
 }
 
 if [[ $# -eq 0 ]]; then
-    echo "Usage: $0 {gateway|supervisor|cli|all}" >&2
+    echo "Usage: $0 {gateway|supervisor|sandbox|cli|all}" >&2
     exit 1
 fi
 
@@ -140,6 +148,7 @@ target="$1"
 if [[ "$target" == "all" ]]; then
     build_image gateway
     build_image supervisor
+    build_image sandbox
     build_image cli
 else
     build_image "$target"
