@@ -57,9 +57,12 @@ plain module is enough — no new crate and no workspace change.
   when it is set, so every ODH test targets the same cluster the upstream
   harness does. `oc_json()` runs a query and parses `-o json` output, panicking
   with a descriptive message on any failure.
+- `odh_harness::selinux::SelinuxAudit` — an opt-in scenario guard that detects
+  OpenShift, requires every Ready worker to report `Enforcing`, records
+  node-local audit cutoffs, and rejects OpenShell AVCs on completion.
 
-Put ODH-specific shared helpers here (the `oc` builder, and future node-level
-checks such as `getenforce` and the AVC-audit guard), and reuse them rather than
+Put ODH-specific shared helpers here (the `oc` builder and node-level SELinux
+checks), and reuse them rather than
 duplicating logic across tier files. Two rules keep this rebase-safe:
 
 - **Do not** add ODH helpers to the upstream harness library
@@ -144,7 +147,6 @@ context you happen to have active elsewhere. This means:
 | `mise run e2e:odh:tier1` | Tier 1: mapped upstream tests + ODH `tier1::` + image provenance |
 | `mise run e2e:odh:tier2` | Tier 2: mapped upstream tests + ODH `tier2::` + image provenance |
 | `mise run e2e:odh:tier3` | Tier 3: mapped upstream tests + ODH `tier3::` + image provenance |
-| `mise run e2e:odh:selinux` | Deploys the standard upstream images, then runs Smoke, Tier 1, and Tier 2 on OCP; checks the process-supervisor label and fails on OpenShell AVCs after each test scenario |
 | `cargo test --manifest-path e2e/rust/Cargo.toml --features e2e-odh --test odh -- test_name --exact` | A single ODH test function |
 
 Example, running the Smoke tier against a real cluster:
@@ -166,48 +168,22 @@ defaults to `""`, i.e. Kubernetes' own default of `Always` for the
 
 ### SELinux-enforcing OCP validation
 
-`mise run e2e:odh:selinux` is the SELinux-enforcing OCP validation lane. It deploys
-a temporary Helm release using the standard upstream gateway and supervisor images,
-then runs
-the lifecycle/exec Smoke scenario, Tier 1 (including Landlock filesystem
-enforcement and the supervisor process-label check; the upstream
-Docker-specific `user_namespaces` test is excluded), and Tier 2 (excluding the
-host-fixture Kubernetes corporate-proxy test, which is not reachable from a
-remote OCP cluster). It also runs downstream-only egress and
-filesystem-denial controls. Every selected test and downstream control scenario
-has its own node-local audit cutoff. The runner first requires `getenforce` to report
-`Enforcing` on worker nodes, then queries each of those nodes with
-`ausearch -m AVC -x` for the gateway and both supervisor executable paths:
-`/usr/local/bin/openshell-gateway` (the downstream gateway),
-`/opt/openshell/bin/openshell-sandbox` (the side-loaded combined/process
-supervisor) and `/openshell-sandbox` (the init-container and sidecar network
-supervisor). The executable filter avoids Linux's truncated process-name
-(`comm`) field. Any matching OpenShell AVC or audit-query failure fails the
-lane.
+Tier 1 includes the SELinux checks when it runs against an OpenShift cluster.
+The tests expect an already-deployed, working gateway. The named preflight
+checks `getenforce` on every Ready worker. Each audited SELinux scenario uses
+`SelinuxAudit`, which self-skips outside OpenShift, records node-local cutoffs,
+and queries `ausearch -m AVC -x` through `oc debug node … chroot /host` after
+the scenario.
+The audit covers the gateway and both supervisor executable paths, and the
+supervisor test checks the stable `container_t` type without hard-coding pod
+MCS categories.
 
-The CI service account needs permission to create debug pods and host access
-that permits `chroot /host ausearch`. This is intentional: pod-local logs
-cannot establish whether the node SELinux policy denied an OpenShell process.
-The check matches the stable `container_t` type and does not pin the per-pod MCS
-category in the process supervisor's `/proc/<pid>/attr/current`.
-It locates the supervisor by its exact first command-line argument,
-`/opt/openshell/bin/openshell-sandbox`, in both combined and sidecar deployments.
-
-Image provenance runs once with Smoke because it validates the installed Helm
-release rather than a tier-specific behavior. Tier 1 and Tier 2 skip that
-duplicate sandbox creation, while keeping their own functional tests and AVC
-audit windows.
-
-Before Helm installs the release, the runner creates an authenticated proxy and
-TLS upstream as an in-cluster Service. The downstream egress control proves an
-approved request crossed that proxy with its Secret credentials and that a
-denied request fails closed without reaching it. The filesystem control proves
-that a write to `/dev/shm` is denied when only `/sandbox` and `/tmp` are
-permitted. Both controls run under the same AVC collection as the product tests.
-
-The task uses the same upstream image defaults as the other ODH PR tests and
-layers the lane-specific `IfNotPresent` pull policies required by the
-image-provenance test.
+The runner requires permission to create debug pods and access the host through
+`chroot /host`. Deployment-specific Helm values and proxy fixtures are owned by
+the environment that deploys the gateway; tier1 does not create them. The
+custom egress control is intentionally outside SELinux scope; egress behavior
+remains covered by the existing proxy tests, and this tier does not create a
+SELinux-specific proxy fixture.
 
 ### Why `e2e:odh` / `e2e:odh:full` run more than you might expect
 
