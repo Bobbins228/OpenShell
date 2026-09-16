@@ -12,6 +12,7 @@
 
 #![cfg(feature = "e2e-odh")]
 
+mod odh_harness;
 mod smoke;
 mod tier1;
 mod tier2;

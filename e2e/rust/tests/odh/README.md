@@ -15,7 +15,10 @@ additive (a new feature flag and a new `[[test]]` entry, both appended).
 ```
 e2e/rust/tests/odh/
 ├── README.md                  # this file
-├── main.rs                    # crate root, declares tier modules, gated on feature "e2e-odh"
+├── main.rs                    # crate root, declares helper + tier modules, gated on feature "e2e-odh"
+├── odh_harness/               # fork-local shared test helpers (see "Shared test helpers")
+│   ├── mod.rs
+│   └── oc.rs                   # `oc` command builder (honors active kube context) + JSON runner
 ├── smoke/                     # Smoke tier: component-level critical tests
 │   ├── mod.rs
 │   ├── gateway.rs              # gateway reachability
@@ -39,6 +42,31 @@ what enables tier-based filtering (`-- smoke::`, `-- tier1::`, ...).
 Adding a new test area within a tier is just adding a `.rs` file and a `mod`
 line in that tier's `mod.rs` — no file grows unbounded, and no other tier is
 affected.
+
+## Shared test helpers
+
+Fork-local test code shared across tiers lives in `odh_harness/`, declared with
+`mod odh_harness;` in `main.rs` and used as `crate::odh_harness::...` from any
+tier module. Because all ODH tests compile into the single `odh` test binary, a
+plain module is enough — no new crate and no workspace change.
+
+- `odh_harness::oc` — the `oc` CLI helpers. `oc_command()` builds a
+  `tokio::process::Command` for `oc`, injecting `--context` from
+  `OPENSHELL_E2E_KUBE_CONTEXT_ACTIVE` (exported by `e2e/with-kube-gateway.sh`)
+  when it is set, so every ODH test targets the same cluster the upstream
+  harness does. `oc_json()` runs a query and parses `-o json` output, panicking
+  with a descriptive message on any failure.
+
+Put ODH-specific shared helpers here (the `oc` builder, and future node-level
+checks such as `getenforce` and the AVC-audit guard), and reuse them rather than
+duplicating logic across tier files. Two rules keep this rebase-safe:
+
+- **Do not** add ODH helpers to the upstream harness library
+  (`e2e/rust/src/harness/`, `openshell_e2e::harness`). That is an upstream file
+  tree; editing it breaks the fork-only guarantee. Keep consuming it for
+  generic, non-ODH helpers (e.g. `openshell_e2e::harness::sandbox::SandboxGuard`).
+- The module is named `odh_harness` (not `harness`) precisely so `use`
+  statements never collide with the upstream `openshell_e2e::harness`.
 
 ## Test tiers
 
