@@ -175,7 +175,7 @@ pub(crate) fn test_opa_query_count() -> u64 {
 }
 
 /// Generation guard captured when an HTTP tunnel or request path starts.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PolicyGenerationGuard {
     captured_generation: u64,
     current_generation: Arc<AtomicU64>,
@@ -714,7 +714,7 @@ impl OpaEngine {
     /// validation guarantees as initial load. Atomically replaces the inner
     /// engine on success; on failure the previous engine is untouched (LKG).
     pub fn reload_from_proto(&self, proto: &ProtoSandboxPolicy) -> Result<()> {
-        self.reload_from_proto_with_pid(proto, 0)
+        self.reload_from_proto_with_pid(proto, 0).map(|_| ())
     }
 
     /// Reload policy from a proto with symlink resolution.
@@ -722,11 +722,12 @@ impl OpaEngine {
     /// When `entrypoint_pid` is non-zero, binary paths that are symlinks
     /// inside the container filesystem are resolved and added as additional
     /// match entries. See [`from_proto_with_pid`] for details.
+    /// Returns evidence tied to the generation installed by this call.
     pub fn reload_from_proto_with_pid(
         &self,
         proto: &ProtoSandboxPolicy,
         entrypoint_pid: u32,
-    ) -> Result<()> {
+    ) -> Result<PolicyGenerationGuard> {
         // Build a complete new engine through the same validated pipeline.
         let new = Self::from_proto_with_pid(proto, entrypoint_pid)?;
         let new_engine = new
@@ -742,8 +743,10 @@ impl OpaEngine {
             .fail_closed_reason
             .write()
             .map_err(|_| miette::miette!("OPA fail-closed state lock poisoned"))? = None;
-        self.advance_generation();
-        Ok(())
+        let generation = self.advance_generation();
+        // Capture evidence while the installation lock still excludes a
+        // competing reload; reading the generation later can bind the wrong policy.
+        self.generation_guard(generation)
     }
 
     /// Reload the policy and middleware registry as one runtime generation.
@@ -752,12 +755,13 @@ impl OpaEngine {
     /// engine and runner are then swapped while holding both locks, followed by
     /// a single generation increment. A preparation or lock failure leaves the
     /// live pair and generation untouched.
+    /// Returns evidence tied to that combined installation.
     pub fn reload_policy_and_middleware_from_proto_with_pid(
         &self,
         proto: &ProtoSandboxPolicy,
         entrypoint_pid: u32,
         registry: MiddlewareRegistry,
-    ) -> Result<()> {
+    ) -> Result<PolicyGenerationGuard> {
         let new = Self::from_proto_with_pid(proto, entrypoint_pid)?;
         let new_engine = new
             .engine
@@ -780,8 +784,8 @@ impl OpaEngine {
             .fail_closed_reason
             .write()
             .map_err(|_| miette::miette!("OPA fail-closed state lock poisoned"))? = None;
-        self.advance_generation();
-        Ok(())
+        let generation = self.advance_generation();
+        self.generation_guard(generation)
     }
 
     /// Publish a deny-all quarantine generation without activating any part
@@ -10893,6 +10897,94 @@ network_policies:
             decision.allowed,
             "Resolved symlink target should be allowed after expansion: {}",
             decision.reason
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn exact_deny_symlink_expands_but_glob_deny_does_not() {
+        use std::os::unix::fs::symlink;
+
+        if !procfs_root_accessible() {
+            eprintln!("Skipping: /proc/<pid>/root/ not accessible in this environment");
+            return;
+        }
+
+        let link_dir = tempfile::tempdir().unwrap();
+        let target_dir = tempfile::tempdir().unwrap();
+        let target = target_dir.path().join("python3");
+        let link = link_dir.path().join("python");
+        std::fs::write(&target, b"python binary").unwrap();
+        symlink(&target, &link).unwrap();
+
+        let target_path = target.to_string_lossy();
+        let exact_link = link.to_string_lossy();
+        let candidate_glob = format!("{}/*", link_dir.path().to_string_lossy());
+        let policy = |deny_binary: &str| {
+            format!(
+                r#"
+version: 1
+network_policies:
+  grant:
+    endpoints:
+      - host: example.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules: [{{ allow: {{ method: GET, path: "/**" }} }}]
+    binaries: [{{ path: "{target_path}" }}]
+  deny:
+    endpoints:
+      - host: example.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules: [{{ allow: {{ method: GET, path: "/**" }} }}]
+        deny_rules: [{{ method: "*", path: "/**" }}]
+    binaries: [{{ path: "{deny_binary}" }}]
+filesystem_policy:
+  include_workdir: false
+  read_only: []
+  read_write: []
+landlock:
+  compatibility: best_effort
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+"#
+            )
+        };
+
+        let maximum = openshell_policy::parse_sandbox_policy(&policy(&exact_link))
+            .expect("maximum policy should parse");
+        let candidate = openshell_policy::parse_sandbox_policy(&policy(&candidate_glob))
+            .expect("candidate policy should parse");
+        let pid = std::process::id();
+        let maximum_engine =
+            OpaEngine::from_proto_with_pid(&maximum, pid).expect("maximum engine should load");
+        let candidate_engine =
+            OpaEngine::from_proto_with_pid(&candidate, pid).expect("candidate engine should load");
+        let input = serde_json::json!({
+            "network": { "host": "example.com", "port": 443 },
+            "exec": {
+                "path": target_path,
+                "ancestors": [],
+                "cmdline_paths": []
+            },
+            "request": {
+                "method": "GET",
+                "path": "/",
+                "query_params": {}
+            }
+        });
+
+        assert!(
+            eval_l7(&candidate_engine, &input),
+            "the candidate glob must not be resolved through the exact symlink"
+        );
+        assert!(
+            !eval_l7(&maximum_engine, &input),
+            "the maximum exact deny must expand to the resolved target"
         );
     }
 
