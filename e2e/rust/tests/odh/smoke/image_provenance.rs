@@ -18,6 +18,8 @@ use serde_json::Value;
 
 use openshell_e2e::harness::sandbox::SandboxGuard;
 
+use crate::odh_harness::oc::{oc_command, oc_json};
+
 fn allowed_prefixes() -> Vec<String> {
     std::env::var("ALLOWED_IMAGE_REGISTRY_PREFIXES")
         .expect(
@@ -28,24 +30,6 @@ fn allowed_prefixes() -> Vec<String> {
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .collect()
-}
-
-async fn oc_json(args: &[&str]) -> Value {
-    let output = tokio::process::Command::new("oc")
-        .args(args)
-        .output()
-        .await
-        .expect(
-            "failed to run `oc` — required for image provenance checks; ensure it is in PATH \
-             and KUBECONFIG targets the cluster",
-        );
-    assert!(
-        output.status.success(),
-        "oc {args:?} failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    serde_json::from_slice(&output.stdout)
-        .unwrap_or_else(|e| panic!("oc {args:?} did not return valid JSON: {e}"))
 }
 
 /// Collects (source, image) pairs from a pod list and appends imagePullPolicy
@@ -206,7 +190,7 @@ async fn test_sandbox_gateway_supervisor_images() {
     // gateway config instead. Held to the same registry-prefix bar (which
     // already excludes upstream ghcr.io/nvidia/openshell/* refs).
     let cm_name = format!("{release}-config");
-    let cm_output = tokio::process::Command::new("oc")
+    let cm_output = oc_command()
         .args([
             "get",
             "configmap",
