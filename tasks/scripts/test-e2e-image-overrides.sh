@@ -63,6 +63,15 @@ assert_reference_part "repository strips tag" \
 assert_reference_part "repository preserves registry port" \
   "localhost:5000/openshell/gateway" \
   "$(e2e_image_reference_repository "localhost:5000/openshell/gateway:test")"
+assert_reference_part "registry extracts hostname" \
+  "registry.example" \
+  "$(e2e_image_reference_registry "registry.example/openshell/gateway:branch")"
+assert_reference_part "registry extracts hostname and port" \
+  "localhost:5000" \
+  "$(e2e_image_reference_registry "localhost:5000/openshell/gateway:test")"
+assert_reference_part "repository path excludes registry" \
+  "openshell/gateway" \
+  "$(e2e_image_reference_repository_path "registry.example/openshell/gateway:branch")"
 assert_reference_part "tag extracts tag" \
   "branch" \
   "$(e2e_image_reference_tag "registry.example/gateway:branch")"
@@ -76,12 +85,15 @@ assert_reference_part "digest has no tag" \
 assert_helm_image_translation() {
   local description=$1
   local image=$2
-  local expected_repository=$3
-  local expected_tag=$4
-  local expected_digest=$5
+  local expected_registry=$3
+  local expected_repository=$4
+  local expected_tag=$5
+  local expected_digest=$6
 
+  assert_reference_part "${description} registry" "${expected_registry}" \
+    "$(e2e_image_reference_registry "${image}")"
   assert_reference_part "${description} repository" "${expected_repository}" \
-    "$(e2e_image_reference_repository "${image}")"
+    "$(e2e_image_reference_repository_path "${image}")"
   assert_reference_part "${description} tag" "${expected_tag}" \
     "$(e2e_image_reference_tag "${image}")"
   assert_reference_part "${description} digest" "${expected_digest}" \
@@ -92,11 +104,11 @@ assert_helm_image_translation() {
 # a mixed tagged/digest-pinned set so each independently configurable image is
 # translated without embedding a complete reference in image.repository.
 assert_helm_image_translation "gateway" \
-  "registry.example/gateway:branch" "registry.example/gateway" "branch" ""
+  "registry.example/gateway:branch" "registry.example" "gateway" "branch" ""
 assert_helm_image_translation "supervisor" \
-  "localhost:5000/openshell/supervisor:test" "localhost:5000/openshell/supervisor" "test" ""
+  "localhost:5000/openshell/supervisor:test" "localhost:5000" "openshell/supervisor" "test" ""
 assert_helm_image_translation "sandbox" \
   "registry.example/sandbox@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
-  "registry.example/sandbox" "" "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  "registry.example" "sandbox" "" "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
 echo "E2E image override tests passed."

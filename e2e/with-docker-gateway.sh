@@ -17,7 +17,7 @@
 # Sandbox image overrides:
 #   OPENSHELL_E2E_DOCKER_SANDBOX_IMAGE=...
 #   OPENSHELL_E2E_DOCKER_SANDBOX_IMAGE_PULL_POLICY=always|if_not_present|never
-#   SANDBOX_IMAGE=... (common test-wrapper override)
+#   SANDBOX_IMAGE=... (trusted sandbox runtime override)
 # Supervisor image overrides:
 #   SUPERVISOR_IMAGE=... (common test-wrapper override)
 #   OPENSHELL_SUPERVISOR_IMAGE=... (existing compatibility override)

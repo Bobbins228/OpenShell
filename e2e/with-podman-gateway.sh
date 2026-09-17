@@ -17,7 +17,7 @@
 # Supervisor image overrides:
 #   SUPERVISOR_IMAGE=... (common test-wrapper override)
 #   OPENSHELL_SUPERVISOR_IMAGE=... (existing compatibility override)
-#   SANDBOX_IMAGE=... (common test-wrapper override)
+#   SANDBOX_IMAGE=... (trusted sandbox runtime override)
 #
 # Set OPENSHELL_E2E_PODMAN_STOP_TIMEOUT_SECS to override the managed gateway's
 # Podman sandbox stop timeout. The harness default is intentionally shorter

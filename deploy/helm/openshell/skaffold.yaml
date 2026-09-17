@@ -139,6 +139,9 @@ deploy:
           # To test multi-replica external PostgreSQL behavior:
           #- ci/values-high-availability.yaml
         setValueTemplates:
+          # Skaffold supplies complete image repositories. Clear the chart's
+          # shared registry so these values are used verbatim.
+          global.image.registry: ''
           gateway.image.repository: '{{.IMAGE_REPO_openshell_gateway}}'
           gateway.image.tag: '{{.IMAGE_TAG_openshell_gateway}}'
           supervisor.image.repository: '{{.IMAGE_REPO_openshell_supervisor}}'
