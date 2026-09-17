@@ -136,11 +136,6 @@ ghcr.io/nvidia/openshell/sandbox
 {{- end -}}
 {{- end }}
 
-{{/* Official supervisor repository used by the gateway's built-in default. */}}
-{{- define "openshell.defaultSupervisorRepository" -}}
-ghcr.io/nvidia/openshell/supervisor
-{{- end }}
-
 {{/*
 Whether the gateway listener should verify client certificates (mTLS).
 An explicit empty server.tls.clientCaSecretName disables client-CA wiring in
@@ -155,14 +150,6 @@ defaults.
 true
 {{- end -}}
 {{- end -}}
-
-{{/*
-Whether Helm must propagate a supervisor image override into gateway.toml.
-The chart's documented repository and empty tag are the gateway-owned default.
-*/}}
-{{- define "openshell.supervisorImageOverrideEnabled" -}}
-true
-{{- end }}
 
 {{/* Supervisor image override. */}}
 {{- define "openshell.supervisorImage" -}}
