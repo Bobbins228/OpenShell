@@ -85,7 +85,8 @@ tests:
   - it: preserves a complete tagged gateway image reference
     template: templates/statefulset.yaml
     set:
-      gateway.image.repository: registry.example/gateway
+      gateway.image.registry: registry.example
+      gateway.image.repository: gateway
       gateway.image.tag: branch
     asserts:
       - equal:
@@ -95,7 +96,8 @@ tests:
   - it: defaults a repository-only gateway image to the chart appVersion
     template: templates/statefulset.yaml
     set:
-      gateway.image.repository: registry.example/gateway
+      gateway.image.registry: registry.example
+      gateway.image.repository: gateway
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
@@ -104,7 +106,7 @@ tests:
   - it: applies global image values to gateway, supervisor, and sandbox runtime
     template: templates/gateway-config.yaml
     set:
-      global.image.repository: registry.example.com/openshell
+      global.image.registry: registry.example.com
       global.image.tag: v0.1.0
       global.image.pullPolicy: IfNotPresent
     asserts:
@@ -114,6 +116,28 @@ tests:
       - matchRegex:
           path: data["gateway.toml"]
           pattern: 'sandbox_runtime_image\s*=\s*"registry\.example\.com/openshell/sandbox:v0\.1\.0"'
+
+  - it: lets an individual registry override the global registry
+    template: templates/statefulset.yaml
+    set:
+      global.image.registry: registry.example.com
+      gateway.image.registry: mirror.example.com
+      gateway.image.repository: custom/gateway
+      global.image.tag: v0.1.0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: mirror.example.com/custom/gateway:v0.1.0
+
+  - it: applies the global registry to the gateway image
+    template: templates/statefulset.yaml
+    set:
+      global.image.registry: registry.example.com
+      global.image.tag: v0.1.0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.example.com/openshell/gateway:v0.1.0
 
   - it: defaults a repository-only sandbox image to latest
     template: templates/gateway-config.yaml
@@ -127,7 +151,8 @@ tests:
   - it: gives a gateway digest precedence over its tag
     template: templates/statefulset.yaml
     set:
-      gateway.image.repository: registry.example/gateway
+      gateway.image.registry: registry.example
+      gateway.image.repository: gateway
       gateway.image.tag: ignored
       gateway.image.digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     asserts:
@@ -138,7 +163,8 @@ tests:
   - it: gives supervisor and sandbox digests precedence over their tags
     template: templates/gateway-config.yaml
     set:
-      supervisor.image.repository: registry.example/supervisor
+      supervisor.image.registry: registry.example
+      supervisor.image.repository: supervisor
       supervisor.image.tag: ignored
       supervisor.image.digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
       sandbox.image.repository: registry.example/sandbox
@@ -431,10 +457,12 @@ tests:
   - it: renders independent sandbox runtime and supervisor image overrides
     template: templates/gateway-config.yaml
     set:
-      sandboxRuntime.image.repository: registry.example.com/openshell/sandbox
+      sandboxRuntime.image.registry: registry.example.com
+      sandboxRuntime.image.repository: openshell/sandbox
       sandboxRuntime.image.tag: sandbox-build
       sandboxRuntime.image.pullPolicy: Always
-      supervisor.image.repository: registry.example.com/openshell/supervisor
+      supervisor.image.registry: registry.example.com
+      supervisor.image.repository: openshell/supervisor
       supervisor.image.tag: supervisor-build
     asserts:
       - matchRegex:
@@ -446,6 +474,18 @@ tests:
       - matchRegex:
           path: data["gateway.toml"]
           pattern: 'supervisor_image\s*=\s*"registry\.example\.com/openshell/supervisor:supervisor-build"'
+
+  - it: gives a sandbox runtime digest precedence over its tag
+    template: templates/gateway-config.yaml
+    set:
+      sandboxRuntime.image.registry: registry.example.com
+      sandboxRuntime.image.repository: openshell/sandbox
+      sandboxRuntime.image.tag: ignored
+      sandboxRuntime.image.digest: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    asserts:
+      - matchRegex:
+          path: data["gateway.toml"]
+          pattern: 'sandbox_runtime_image\s*=\s*"registry\.example\.com/openshell/sandbox@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"'
 
   - it: renders a supervisor tag override with the official repository
     template: templates/gateway-config.yaml
@@ -459,7 +499,8 @@ tests:
   - it: renders a supervisor repository override with the default chart tag
     template: templates/gateway-config.yaml
     set:
-      supervisor.image.repository: registry.example.com/openshell/supervisor
+      supervisor.image.registry: registry.example.com
+      supervisor.image.repository: openshell/supervisor
     asserts:
       - matchRegex:
           path: data["gateway.toml"]
@@ -468,7 +509,8 @@ tests:
   - it: renders complete supervisor repository and tag overrides
     template: templates/gateway-config.yaml
     set:
-      supervisor.image.repository: registry.example.com/openshell/supervisor
+      supervisor.image.registry: registry.example.com
+      supervisor.image.repository: openshell/supervisor
       supervisor.image.tag: supervisor-build
     asserts:
       - matchRegex:

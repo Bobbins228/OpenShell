@@ -9,8 +9,8 @@ replicaCount: 1
 
 global:
   image:
-    # -- Shared OpenShell image repository. Individual image repositories take precedence.
-    repository: ghcr.io/nvidia/openshell
+    # -- Shared OpenShell image registry. Individual image registries take precedence.
+    registry: ghcr.io/nvidia
     # -- Shared OpenShell image tag. Defaults to the chart appVersion when empty.
     tag: ""
     # -- Shared OpenShell image pull policy. Individual image pull policies take precedence.
@@ -29,9 +29,11 @@ workload:
 
 gateway:
   image:
+    # -- Gateway image registry. Empty uses global.image.registry.
+    registry: ""
     # -- Gateway image repository.
-    repository: ""
-    # -- Gateway image pull policy.
+    repository: openshell/gateway
+    # -- Gateway image pull policy. Empty uses global.image.pullPolicy.
     pullPolicy: null
     # -- Gateway image tag. Defaults to the chart appVersion when empty.
     tag: ""
@@ -41,23 +43,29 @@ gateway:
 # Trusted workload-side runtime image.
 sandboxRuntime:
   image:
-    # -- Sandbox runtime image repository. Changing it uses the effective gateway image tag unless tag is also set.
-    repository: ""
-    # -- Sandbox runtime image pull policy. Defaults to the gateway image pull policy when empty.
+    # -- Sandbox runtime image registry. Empty uses global.image.registry.
+    registry: ""
+    # -- Sandbox runtime image repository.
+    repository: openshell/sandbox
+    # -- Sandbox runtime image pull policy. Empty uses global.image.pullPolicy.
     pullPolicy: null
-    # -- Sandbox runtime image tag override. Empty uses the version pinned into the gateway unless repository is changed.
+    # -- Sandbox runtime image tag. Defaults to the chart appVersion when empty.
     tag: ""
+    # -- Sandbox runtime image digest. When set, this takes precedence over tag.
+    digest: ""
 
 # Trusted control-side runtime image.
 supervisor:
   image:
-    # -- Supervisor image repository. Changing it uses the effective gateway image tag unless tag is also set.
-    repository: ""
-    # -- Sandbox supervisor pull policy. Leave unset to use the Kubernetes
-    # image default. Prefer always, if_not_present, or never; the chart also
-    # accepts legacy Kubernetes spellings Always, IfNotPresent, and Never.
+    # -- Supervisor image registry. Empty uses global.image.registry.
+    registry: ""
+    # -- Supervisor image repository.
+    repository: openshell/supervisor
+    # -- Supervisor image pull policy. Empty uses global.image.pullPolicy.
+    # Prefer always, if_not_present, or never; the chart also accepts legacy
+    # Kubernetes spellings Always, IfNotPresent, and Never.
     pullPolicy: null
-    # -- Supervisor image tag override. Empty uses the version pinned into the gateway unless repository is changed.
+    # -- Supervisor image tag. Defaults to the chart appVersion when empty.
     tag: ""
     # -- Supervisor image digest. When set, this takes precedence over tag.
     digest: ""

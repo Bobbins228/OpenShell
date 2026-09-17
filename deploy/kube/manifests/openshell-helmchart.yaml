@@ -24,14 +24,17 @@ spec:
   createNamespace: true
   valuesContent: |-
     chartChecksum: __CHART_CHECKSUM__
+    global:
+      image:
+        registry: ghcr.io/nvidia
     gateway:
       image:
-        repository: ghcr.io/nvidia/openshell/gateway
+        repository: openshell/gateway
         tag: latest
         pullPolicy: __IMAGE_PULL_POLICY__
     supervisor:
       image:
-        repository: ghcr.io/nvidia/openshell/supervisor
+        repository: openshell/supervisor
         tag: latest
     sandbox:
       image:

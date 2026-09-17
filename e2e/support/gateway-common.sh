@@ -44,6 +44,36 @@ e2e_image_reference_repository() {
   printf '%s\n' "${repository}"
 }
 
+# Return the registry portion of an image repository. Docker treats the first
+# path component as a registry when it contains a dot or colon, or is
+# `localhost`; otherwise the image uses the configured/default registry.
+e2e_image_reference_registry() {
+  local repository
+  local first_component
+
+  repository="$(e2e_image_reference_repository "$1")"
+  first_component="${repository%%/*}"
+  if [[ "${repository}" == */* ]] \
+    && { [[ "${first_component}" == *.* ]] || [[ "${first_component}" == *:* ]] || [[ "${first_component}" == "localhost" ]]; }; then
+    printf '%s\n' "${first_component}"
+  fi
+}
+
+# Return the repository path without its registry, suitable for Helm's
+# <component>.image.repository values.
+e2e_image_reference_repository_path() {
+  local repository
+  local registry
+
+  repository="$(e2e_image_reference_repository "$1")"
+  registry="$(e2e_image_reference_registry "$1")"
+  if [ -n "${registry}" ]; then
+    printf '%s\n' "${repository#"${registry}"/}"
+  else
+    printf '%s\n' "${repository}"
+  fi
+}
+
 e2e_image_reference_tag() {
   local image=$1
   local repository="${image%%@*}"

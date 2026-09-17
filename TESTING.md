@@ -374,10 +374,10 @@ mise run e2e:kubernetes
 ```
 
 `GATEWAY_IMAGE` applies to the Kubernetes gateway container. `SUPERVISOR_IMAGE`
-applies to the supervisor image selected by the Kubernetes, Docker, and Podman
-wrappers. `SANDBOX_IMAGE` applies to the standalone sandbox image selected by
-all test wrappers. A repository-only value inherits `IMAGE_TAG` for gateway and
-supervisor images; a value with an explicit tag or `@sha256:` digest is used
+applies to the trusted supervisor image selected by the Kubernetes, Docker, and
+Podman wrappers. `SANDBOX_IMAGE` applies to the trusted workload-side runtime
+image that stages the `openshell-sandbox` binary. A repository-only value
+inherits `IMAGE_TAG`; a value with an explicit tag or `@sha256:` digest is used
 as-is. When these variables are unset, the existing `OPENSHELL_REGISTRY` plus
 `IMAGE_TAG` behavior is retained.
 The Docker and Podman wrappers continue to give
@@ -419,7 +419,7 @@ Kubernetes e2e environment variables:
 | `OPENSHELL_REGISTRY` | Image registry prefix (default: `ghcr.io/nvidia/openshell`) |
 | `GATEWAY_IMAGE` | Kubernetes gateway image repository or complete tagged/digest-pinned image reference; digests require `OPENSHELL_E2E_KUBE_BUILD_IMAGES=0` |
 | `SUPERVISOR_IMAGE` | Gateway/supervisor image repository or complete tagged/digest-pinned image reference; Kubernetes digests require `OPENSHELL_E2E_KUBE_BUILD_IMAGES=0` |
-| `SANDBOX_IMAGE` | Standalone sandbox image repository or complete tagged/digest-pinned image reference |
+| `SANDBOX_IMAGE` | Trusted sandbox runtime image repository or complete tagged/digest-pinned image reference |
 
 Run a single test directly with cargo:
 
