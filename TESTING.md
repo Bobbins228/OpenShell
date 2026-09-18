@@ -48,6 +48,24 @@ mise run test:rust     # cargo test --workspace
 
 Rust validation checks tracked Cargo lockfiles; run `mise run rust:lockfiles:check` to check them directly. If one is stale, refresh it with Cargo using its adjacent manifest, review the diff, and commit the update.
 
+### Native Windows validation
+
+Use `mise run --skip-tools pre-commit` with the existing Rust/MSVC toolchain.
+Windows now checks tracked Cargo lockfiles through PowerShell rather than
+skipping them. The deterministic gateway parity task uses Git for Windows Bash,
+with temporary Python launchers confined to a unique checkout-owned directory.
+
+`mise run --skip-tools sdk:ts:ci` selects the x64 Biome executable on Windows
+(including ARM64 hosts running it under emulation), resolves the protobuf
+plugin through its Windows `.cmd` launcher, and installs the matching locked
+ARM64 Rolldown binding when Node itself is ARM64. The helper preserves lockfile
+resolution; it must not upgrade unrelated test dependencies.
+
+`mise run --skip-tools go:ci` retains race detection except on Windows ARM64,
+where Go does not support it. Windows token-file tests explicitly skip POSIX
+mode-bit assertions; those skips do not establish Windows ACL protection.
+Use a checkout with LF text files when running Unix-shell fixture checks.
+
 ## Python Unit Tests
 
 Python unit tests use the `*_test.py` suffix convention (not `test_*` prefix)
@@ -326,9 +344,40 @@ TAG=0.0.115
 skopeo inspect "docker://ghcr.io/nvidia/openshell/gateway:${TAG}"
 ```
 
-`IMAGE_TAG` sets only the gateway/supervisor image; the CLI under test is always
-built from your branch. To validate against images from your exact commit
-instead, build and push them and point `OPENSHELL_REGISTRY`/`IMAGE_TAG` at them.
+`IMAGE_TAG` sets the default tag for the gateway/supervisor image pair; the CLI
+under test is always built from your branch. To validate against images from
+your exact commit instead, build and push them and point
+`OPENSHELL_REGISTRY`/`IMAGE_TAG` at them.
+
+Test wrappers accept independent image overrides:
+
+```shell
+GATEWAY_IMAGE=registry.example.com/custom/gateway:test \
+SUPERVISOR_IMAGE=registry.example.com/custom/supervisor:test \
+SANDBOX_IMAGE=registry.example.com/custom/sandbox:test \
+mise run e2e:kubernetes
+```
+
+`GATEWAY_IMAGE` applies to the Kubernetes gateway container. `SUPERVISOR_IMAGE`
+applies to the trusted supervisor image selected by the Kubernetes, Docker, and
+Podman wrappers. `SANDBOX_IMAGE` applies to the trusted workload-side runtime
+image that stages the `openshell-sandbox` binary. A repository-only value
+inherits `IMAGE_TAG`; a value with an explicit tag or `@sha256:` digest is used
+as-is. When these variables are unset, the existing `OPENSHELL_REGISTRY` plus
+`IMAGE_TAG` behavior is retained.
+The Docker and Podman wrappers continue to give
+`OPENSHELL_DOCKER_SUPERVISOR_IMAGE` and `OPENSHELL_SUPERVISOR_IMAGE` precedence
+over `SUPERVISOR_IMAGE`.
+
+Digest-pinned Kubernetes overrides require disabling local image builds, because
+Docker cannot tag a locally built image with a digest reference:
+
+```shell
+OPENSHELL_E2E_KUBE_BUILD_IMAGES=0 \
+GATEWAY_IMAGE=registry.example.com/custom/gateway@sha256:<digest> \
+SUPERVISOR_IMAGE=registry.example.com/custom/supervisor@sha256:<digest> \
+mise run e2e:kubernetes
+```
 
 Available task variants:
 
@@ -353,6 +402,9 @@ Kubernetes e2e environment variables:
 | `OPENSHELL_E2E_KUBERNETES_FEATURES` | Cargo feature flags (default: `e2e,e2e-host-gateway,e2e-kubernetes`) |
 | `IMAGE_TAG` | Gateway/supervisor image tag (default: `latest` for existing clusters) |
 | `OPENSHELL_REGISTRY` | Image registry prefix (default: `ghcr.io/nvidia/openshell`) |
+| `GATEWAY_IMAGE` | Kubernetes gateway image repository or complete tagged/digest-pinned image reference; digests require `OPENSHELL_E2E_KUBE_BUILD_IMAGES=0` |
+| `SUPERVISOR_IMAGE` | Gateway/supervisor image repository or complete tagged/digest-pinned image reference; Kubernetes digests require `OPENSHELL_E2E_KUBE_BUILD_IMAGES=0` |
+| `SANDBOX_IMAGE` | Trusted sandbox runtime image repository or complete tagged/digest-pinned image reference |
 
 Run a single test directly with cargo:
 

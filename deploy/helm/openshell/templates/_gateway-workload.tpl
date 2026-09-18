@@ -43,7 +43,7 @@ spec:
       securityContext:
         {{- toYaml .Values.securityContext | nindent 8 }}
       image: {{ include "openshell.image" . | quote }}
-      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      imagePullPolicy: {{ .Values.gateway.image.pullPolicy | default .Values.global.image.pullPolicy }}
       args:
         - --config
         - /etc/openshell/gateway.toml
@@ -117,6 +117,11 @@ spec:
         {{- if and .Values.server.oidc.issuer .Values.server.oidc.caConfigMapName }}
         - name: oidc-ca
           mountPath: /etc/openshell-tls/oidc-ca
+          readOnly: true
+        {{- end }}
+        {{- if and .Values.server.credentialDrivers.vault.enabled .Values.server.credentialDrivers.vault.caConfigMapName }}
+        - name: vault-ca
+          mountPath: /etc/openshell-tls/vault-ca
           readOnly: true
         {{- end }}
         {{- if .Values.server.providerTokenGrants.spiffe.enabled }}
@@ -195,6 +200,14 @@ spec:
     - name: oidc-ca
       configMap:
         name: {{ .Values.server.oidc.caConfigMapName }}
+    {{- end }}
+    {{- if and .Values.server.credentialDrivers.vault.enabled .Values.server.credentialDrivers.vault.caConfigMapName }}
+    - name: vault-ca
+      configMap:
+        name: {{ .Values.server.credentialDrivers.vault.caConfigMapName }}
+        items:
+          - key: ca.crt
+            path: ca.crt
     {{- end }}
     {{- if .Values.server.providerTokenGrants.spiffe.enabled }}
     - name: spiffe-workload-api
