@@ -63,6 +63,7 @@ let
           use_galaxy = false;
           playbooks = [
             "ansible/playbooks/nextest.yaml"
+            "ansible/playbooks/selinux.yaml"
             "ansible/playbooks/podman-rootful.yaml"
           ];
         };
@@ -87,6 +88,7 @@ let
           use_galaxy = false;
           playbooks = [
             "ansible/playbooks/nextest.yaml"
+            "ansible/playbooks/selinux.yaml"
             "ansible/playbooks/podman-rootless.yaml"
           ];
         };
@@ -112,6 +114,14 @@ let
         playbooks = [ "ansible/playbooks/conformance/cli.yaml" ];
         inputs = {
           openshell_conformance_test_bundle = "../artifacts/test-archives/${muslTarget}/openshell-conformance-tests.tar";
+        };
+      }
+      {
+        name = "provider-refresh";
+        playbooks = [ "ansible/playbooks/features/provider-refresh/keycloak.yaml" ];
+        inputs = {
+          keycloak_realm_file = "../scripts/keycloak-realm.json";
+          provider_refresh_keycloak_test_bundle = "../artifacts/test-archives/${muslTarget}/provider-refresh-keycloak-tests.tar";
         };
       }
     ];
