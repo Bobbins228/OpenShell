@@ -185,6 +185,25 @@ are unavailable. Workload shells belong to the separate sandbox image. Preserve
 the driver-selected UID and writable runtime/log mounts when reproducing a
 supervisor startup failure.
 
+A `ConfigurationInvalid` readiness condition means startup admission rejected
+the image/effective policy or provider configuration. The supervisor remains
+alive while the workload stays unstarted. Inspect `openshell sandbox get` and
+repair the desired configuration with a complete policy replacement or provider
+change; do not treat a healthy container as proof that the workload is ready.
+If the 300-second provisioning repair window expires, the gateway records
+`ProvisioningTimedOut` and stops workload and supervisor compute. Inspect
+`provisioning` in sandbox JSON and TUI NOTES to distinguish cleanup pending from
+complete. Repairing configuration after expiry does not restart compute: wait
+for cleanup, then explicitly use `sandbox start`. Repeated rejected reports do
+not refresh the deadline, and the CLI wait timeout does not control it.
+See [policy validation and repair](https://docs.nvidia.com/openshell/latest/sandboxes/policies.md).
+The isolated supervisor requests image-policy discovery through the authenticated
+sandbox boundary before admission. The workload boundary can remain alive without
+launching the workload while configuration is repaired. An unavailable boundary
+fails discovery within its control-request deadline. Permanent
+gateway errors and exhausted transient retries terminate startup; inspect those
+errors as connectivity, authorization, or lifecycle failures.
+
 ### Step 4: Check Docker-Backed Gateways
 
 ```bash
@@ -646,11 +665,31 @@ a required unprivileged seccomp, task-memory, or Landlock operation. Do not add
 capabilities, gateway egress, or credentials to the workload Pod as a
 workaround.
 
-If a Sandbox remains in the `rolling-back` bootstrap phase, verify that the
+If a Sandbox remains in the `releasing` bootstrap phase, inspect the supervisor
+Pod first. The gateway keeps the workload running during this phase so the
+supervisor can release that sandbox's runtime-control relationship cleanly.
+Check the Pod's deletion timestamp, termination grace period, events, and
+finalizers, and verify that the gateway ServiceAccount can delete Pods in the
+sandbox namespace:
+
+```bash
+kubectl -n <sandbox-namespace> get pod \
+  -l openshell.ai/sandbox-id=<sandbox-id>,openshell.ai/boundary-role=supervisor \
+  -o yaml
+kubectl auth can-i delete pods \
+  --namespace <sandbox-namespace> \
+  --as system:serviceaccount:openshell:openshell
+```
+
+Do not suspend or delete the workload Pod manually. The driver advances to
+`suspending` only after runtime control has been released, and then suspends the
+workload.
+
+If a Sandbox remains in the `suspending` bootstrap phase, verify that the
 gateway ServiceAccount can create, list, and delete Secrets in the sandbox
 namespace. Recovery lists generation Secrets by sandbox and component labels
 even when none remain, then deletes stale entries with UID preconditions before
-clearing the rollback annotations:
+clearing the suspension annotations:
 
 ```bash
 for verb in create list delete; do

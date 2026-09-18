@@ -43,6 +43,11 @@ e2e-vm = ["e2e", "e2e-host-gateway"]
 e2e-odh = ["e2e-kubernetes"]
 
 [[test]]
+name = "policy_activation"
+path = "tests/policy_activation.rs"
+required-features = ["e2e-docker"]
+
+[[test]]
 name = "oidc_pkce"
 path = "tests/oidc_pkce.rs"
 required-features = ["e2e-oidc-pkce"]
