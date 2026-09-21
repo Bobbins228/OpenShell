@@ -11,6 +11,11 @@
 # `-C target-feature=+crt-static` using Red Hat's glibc-static package
 # (CodeReady Builder), so the build has no dependency on musl.
 #
+# Static glibc still loads the NSS modules listed in the workload's
+# /etc/nsswitch.conf, and those crash a static binary (RHAI-1927). The build
+# links in deploy/konflux/sandbox/pin-nss.c, which limits NSS to the built-in
+# files and dns services at startup, matching upstream's musl behavior.
+#
 # Requires prefetched dependencies via Hermeto (cargo, rpm, generic).
 # See deploy/konflux/ for prefetch configs.
 #
@@ -49,6 +54,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY .cargo/ .cargo/
 COPY crates/ crates/
 COPY proto/ proto/
+COPY deploy/konflux/sandbox/pin-nss.c deploy/konflux/sandbox/nss-probe.c ./
 
 # Version stamped into the binary via openshell-core::VERSION; tag builds
 # pass the git tag with the leading "v" stripped. Empty otherwise.
@@ -62,12 +68,22 @@ ARG OPENSHELL_VERSION=""
 # No feature flags: openshell-sandbox has no default features and depends on
 # openshell-core without its default (telemetry) feature.
 #
+# `-C link-arg=/build/pin-nss.o` links the NSS pin (see the header). An object
+# file passed on the link line is always linked whole, so its constructor is
+# kept. rustc links with -nodefaultlibs and places link args after its own
+# -lc, so no libc.a scan follows pin-nss.o. Today its reference to
+# __nss_configure_lookup resolves only because std's lookups already pulled
+# that libc.a member in; `--undefined` is belt-and-braces that makes the
+# linker pull it regardless.
+#
 # Fail the build if the binary requests a dynamic loader: the runtime stage has
-# glibc, so a smoke test there would not catch a non-static binary.
+# glibc, so a smoke test there would not catch a non-static binary. Also fail
+# if the NSS pin is missing, detected by its warning string.
 RUN . /tmp/build-env && \
     VER="${OPENSHELL_VERSION#v}" && \
     if [ -n "$VER" ]; then export OPENSHELL_GIT_VERSION="$VER"; fi && \
-    RUSTFLAGS="-C target-feature=+crt-static" \
+    gcc -O2 -fPIE -Wall -Wextra -c /build/pin-nss.c -o /build/pin-nss.o && \
+    RUSTFLAGS="-C target-feature=+crt-static -C link-arg=/build/pin-nss.o -C link-arg=-Wl,--undefined=__nss_configure_lookup" \
     cargo build --release \
         --target "${RUST_TARGET}" \
         --package openshell-sandbox \
@@ -77,6 +93,31 @@ RUN . /tmp/build-env && \
     readelf -l /build/output/openshell-sandbox > /tmp/program-headers && \
     if grep -q 'Requesting program interpreter' /tmp/program-headers; then \
         echo "openshell-sandbox is not statically linked" >&2; exit 1; \
+    fi && \
+    if ! grep -qa 'failed to pin NSS database' /build/output/openshell-sandbox; then \
+        echo "openshell-sandbox is missing the NSS pin (pin-nss.c)" >&2; exit 1; \
+    fi
+
+# Prove the pin works, not only that it is linked (see nss-probe.c). A fake
+# NSS module with no libc dependency answers every UID, standing in for
+# modules such as libnss_systemd on every architecture. Negative control: a
+# static probe without the pin must resolve an unknown UID through it. Then
+# the same probe linked with pin-nss.o must not consult it. The step uses
+# `set -eu` instead of an && chain so it can capture the unpinned exit code.
+RUN set -eu; \
+    gcc -O2 -Wall -Wextra -fPIC -shared -nostdlib -DNSS_PROBE_MODULE \
+        /build/nss-probe.c -o /usr/lib64/libnss_openshellprobe.so.2; \
+    gcc -O2 -Wall -Wextra -static /build/nss-probe.c -o /tmp/nss-probe-unpinned; \
+    gcc -O2 -Wall -Wextra -static /build/nss-probe.c /build/pin-nss.o \
+        -o /tmp/nss-probe-pinned; \
+    printf 'passwd: files openshellprobe\n' > /etc/nsswitch.conf; \
+    rc=0; /tmp/nss-probe-unpinned || rc=$?; \
+    if [ "$rc" -ne 1 ]; then \
+        echo "NSS probe negative control failed: unpinned probe exited $rc, expected 1 (fake module consulted)" >&2; exit 1; \
+    fi; \
+    rc=0; /tmp/nss-probe-pinned || rc=$?; \
+    if [ "$rc" -ne 0 ]; then \
+        echo "NSS pin check failed: pinned probe exited $rc, expected 0 (RHAI-1927)" >&2; exit 1; \
     fi
 
 # ---------------------------------------------------------------------------
