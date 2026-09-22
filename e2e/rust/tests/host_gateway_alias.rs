@@ -315,7 +315,11 @@ async fn sandbox_reaches_host_openshell_internal_via_host_gateway_alias() {
         .expect("temp policy path should be utf-8")
         .to_string();
 
+    // The workload needs curl, which minimal default images such as the VM
+    // driver's nvcr.io/nvidia/base/ubuntu do not ship.
     let guard = SandboxGuard::create(&[
+        "--from",
+        "base",
         "--policy",
         &policy_path,
         "--",
@@ -404,6 +408,8 @@ async fn static_provider_credentials_are_bound_to_profile_endpoints() {
         server.port, server.port, server.port
     );
     let mut guard = SandboxGuard::create(&[
+        "--from",
+        "base",
         "--policy",
         &policy_path,
         "--provider",
