@@ -3128,6 +3128,7 @@ where
     let started_at = std::time::Instant::now();
     let mut read_buf = [0u8; RELAY_BUF_SIZE];
     let mut parse_buf = Vec::from(already_forwarded);
+    let mut forwarded_len = already_forwarded.len();
     let mut pos = 0usize;
     let mut chunk_count = 0usize;
     let mut chunk_payload_bytes = 0usize;
@@ -3140,16 +3141,26 @@ where
             if let Some(end) = find_crlf(&parse_buf, pos) {
                 break end;
             }
-            let n = reader.read(&mut read_buf).await.into_diagnostic()?;
-            if n == 0 {
-                return Err(miette!("Chunked body ended before chunk-size line"));
+            if parse_buf.len().saturating_sub(pos) >= MAX_HEADER_BYTES {
+                return Err(miette!("Chunk-size line exceeds limit"));
             }
-            if let Some(guard) = generation_guard {
-                guard.ensure_current()?;
-            }
-            writer.write_all(&read_buf[..n]).await.into_diagnostic()?;
-            parse_buf.extend_from_slice(&read_buf[..n]);
+            let target_len = parse_buf
+                .len()
+                .checked_add(1)
+                .ok_or_else(|| miette!("Chunked body size overflow"))?;
+            relay_chunked_until_len(
+                reader,
+                &mut read_buf,
+                &mut parse_buf,
+                target_len,
+                generation_guard,
+                "Chunked body ended before chunk-size line",
+            )
+            .await?;
         };
+        if size_line_end.saturating_add(2).saturating_sub(pos) > MAX_HEADER_BYTES {
+            return Err(miette!("Chunk-size line exceeds limit"));
+        }
 
         let size_line = std::str::from_utf8(&parse_buf[pos..size_line_end])
             .into_diagnostic()
@@ -3163,6 +3174,15 @@ where
             .into_diagnostic()
             .map_err(|_| miette!("Invalid chunk size token: {size_token:?}"))?;
         pos = size_line_end + 2;
+        flush_validated_chunked_bytes(
+            writer,
+            &parse_buf,
+            &mut forwarded_len,
+            pos,
+            false,
+            generation_guard,
+        )
+        .await?;
 
         if chunk_size == 0 {
             // Parse trailers (if any). Terminates on empty trailer line.
@@ -3172,20 +3192,40 @@ where
                     if let Some(end) = find_crlf(&parse_buf, pos) {
                         break end;
                     }
-                    let n = reader.read(&mut read_buf).await.into_diagnostic()?;
-                    if n == 0 {
-                        return Err(miette!("Chunked body ended before trailer terminator"));
+                    if parse_buf.len().saturating_sub(pos) >= MAX_HEADER_BYTES {
+                        return Err(miette!("Chunk trailer line exceeds limit"));
                     }
-                    if let Some(guard) = generation_guard {
-                        guard.ensure_current()?;
-                    }
-                    writer.write_all(&read_buf[..n]).await.into_diagnostic()?;
-                    parse_buf.extend_from_slice(&read_buf[..n]);
+                    let target_len = parse_buf
+                        .len()
+                        .checked_add(1)
+                        .ok_or_else(|| miette!("Chunked trailer size overflow"))?;
+                    relay_chunked_until_len(
+                        reader,
+                        &mut read_buf,
+                        &mut parse_buf,
+                        target_len,
+                        generation_guard,
+                        "Chunked body ended before trailer terminator",
+                    )
+                    .await?;
                 };
+                if trailer_end.saturating_add(2).saturating_sub(pos) > MAX_HEADER_BYTES {
+                    return Err(miette!("Chunk trailer line exceeds limit"));
+                }
 
                 let trailer_line = &parse_buf[pos..trailer_end];
+                let trailer_is_empty = trailer_line.is_empty();
                 pos = trailer_end + 2;
-                if trailer_line.is_empty() {
+                flush_validated_chunked_bytes(
+                    writer,
+                    &parse_buf,
+                    &mut forwarded_len,
+                    pos,
+                    trailer_is_empty,
+                    generation_guard,
+                )
+                .await?;
+                if trailer_is_empty {
                     debug!(
                         chunk_count,
                         chunk_payload_bytes,
@@ -3196,6 +3236,11 @@ where
                     return Ok(());
                 }
                 trailer_count += 1;
+                if pos > RELAY_BUF_SIZE * 4 && forwarded_len >= pos {
+                    parse_buf.drain(..pos);
+                    forwarded_len -= pos;
+                    pos = 0;
+                }
             }
         }
 
@@ -3207,30 +3252,104 @@ where
             .checked_add(2)
             .ok_or_else(|| miette!("Chunk size overflow"))?;
 
-        while parse_buf.len() < chunk_with_crlf_end {
-            let n = reader.read(&mut read_buf).await.into_diagnostic()?;
-            if n == 0 {
-                return Err(miette!("Chunked body ended mid-chunk"));
-            }
-            if let Some(guard) = generation_guard {
-                guard.ensure_current()?;
-            }
-            writer.write_all(&read_buf[..n]).await.into_diagnostic()?;
-            parse_buf.extend_from_slice(&read_buf[..n]);
-        }
+        relay_chunked_until_len(
+            reader,
+            &mut read_buf,
+            &mut parse_buf,
+            chunk_with_crlf_end,
+            generation_guard,
+            "Chunked body ended mid-chunk",
+        )
+        .await?;
         if &parse_buf[chunk_end..chunk_with_crlf_end] != b"\r\n" {
             return Err(miette!("Chunk missing terminating CRLF"));
         }
         pos = chunk_with_crlf_end;
+        flush_validated_chunked_bytes(
+            writer,
+            &parse_buf,
+            &mut forwarded_len,
+            pos,
+            true,
+            generation_guard,
+        )
+        .await?;
         chunk_count += 1;
         chunk_payload_bytes = chunk_payload_bytes.saturating_add(chunk_size);
 
         // Keep parser memory bounded for long streams.
-        if pos > RELAY_BUF_SIZE * 4 {
+        if pos > RELAY_BUF_SIZE * 4 && forwarded_len >= pos {
             parse_buf.drain(..pos);
+            forwarded_len -= pos;
             pos = 0;
         }
     }
+}
+
+/// Read only the bytes needed to reach `target_len`.
+///
+/// The connection-scoped buffered reader may fetch more data from the socket,
+/// but this parser consumes only the current body. Any read-ahead remains in
+/// that reader for the next request's policy decision.
+async fn relay_chunked_until_len<R>(
+    reader: &mut R,
+    read_buf: &mut [u8; RELAY_BUF_SIZE],
+    parse_buf: &mut Vec<u8>,
+    target_len: usize,
+    generation_guard: Option<&PolicyGenerationGuard>,
+    eof_message: &'static str,
+) -> Result<()>
+where
+    R: AsyncRead + Unpin,
+{
+    while parse_buf.len() < target_len {
+        let remaining = target_len - parse_buf.len();
+        let to_read = remaining.min(read_buf.len());
+        let n = reader
+            .read(&mut read_buf[..to_read])
+            .await
+            .into_diagnostic()?;
+        if n == 0 {
+            return Err(miette!(eof_message));
+        }
+        if let Some(guard) = generation_guard {
+            guard.ensure_current()?;
+        }
+        parse_buf.extend_from_slice(&read_buf[..n]);
+    }
+    Ok(())
+}
+
+/// Forward complete, validated chunk framing.
+///
+/// Size lines may be coalesced with their payload, but every completed chunk is
+/// forwarded immediately so streaming request and response bodies make
+/// progress without waiting for the terminal chunk. This writes by validated
+/// framing units rather than once per framing byte.
+async fn flush_validated_chunked_bytes<W>(
+    writer: &mut W,
+    parse_buf: &[u8],
+    forwarded_len: &mut usize,
+    validated_len: usize,
+    force: bool,
+    generation_guard: Option<&PolicyGenerationGuard>,
+) -> Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    let pending = validated_len.saturating_sub(*forwarded_len);
+    if pending == 0 || (!force && pending < RELAY_BUF_SIZE) {
+        return Ok(());
+    }
+    if let Some(guard) = generation_guard {
+        guard.ensure_current()?;
+    }
+    writer
+        .write_all(&parse_buf[*forwarded_len..validated_len])
+        .await
+        .into_diagnostic()?;
+    *forwarded_len = validated_len;
+    Ok(())
 }
 
 fn find_crlf(buf: &[u8], start: usize) -> Option<usize> {
@@ -3853,6 +3972,38 @@ mod tests {
             let end = self.position + amount;
             buffer.put_slice(&self.bytes[self.position..end]);
             self.position = end;
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[derive(Default)]
+    struct CountingWriter {
+        writes: usize,
+        bytes: Vec<u8>,
+    }
+
+    impl AsyncWrite for CountingWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+            buffer: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            self.writes += 1;
+            self.bytes.extend_from_slice(buffer);
+            Poll::Ready(Ok(buffer.len()))
+        }
+
+        fn poll_flush(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: Pin<&mut Self>,
+            _context: &mut Context<'_>,
+        ) -> Poll<std::io::Result<()>> {
             Poll::Ready(Ok(()))
         }
     }
@@ -4557,6 +4708,134 @@ mod tests {
             BodyLength::Chunked => {}
             other => panic!("Expected Chunked, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn relay_chunked_leaves_pipelined_request_for_next_policy_decision() {
+        let chunked_body = b"0\r\n\r\n";
+        let pipelined_request =
+            b"DELETE /blocked HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n";
+        let mut wire = chunked_body.to_vec();
+        wire.extend_from_slice(pipelined_request);
+
+        let (relay_reader, mut client_writer) = tokio::io::duplex(4096);
+        client_writer.write_all(&wire).await.unwrap();
+        let mut relay_reader = tokio::io::BufReader::with_capacity(4096, relay_reader);
+        let (mut relay_writer, mut upstream_reader) = tokio::io::duplex(4096);
+
+        relay_chunked(&mut relay_reader, &mut relay_writer, &[], None)
+            .await
+            .expect("chunked body should relay");
+
+        let mut remaining = vec![0; pipelined_request.len()];
+        relay_reader.read_exact(&mut remaining).await.unwrap();
+        assert_eq!(remaining, pipelined_request);
+
+        drop(relay_writer);
+        let mut forwarded = Vec::new();
+        upstream_reader.read_to_end(&mut forwarded).await.unwrap();
+        assert_eq!(forwarded, chunked_body);
+    }
+
+    #[tokio::test]
+    async fn relay_chunked_with_forwarded_prefix_and_trailers_preserves_pipeline_boundary() {
+        let already_forwarded = b"3\r\na";
+        let body_remainder = b"bc\r\n0\r\nX-Checksum: abc123\r\n\r\n";
+        let pipelined_request =
+            b"DELETE /blocked HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n";
+        let mut later_read = body_remainder.to_vec();
+        later_read.extend_from_slice(pipelined_request);
+
+        let (relay_reader, mut client_writer) = tokio::io::duplex(4096);
+        client_writer.write_all(&later_read).await.unwrap();
+        let mut relay_reader = tokio::io::BufReader::with_capacity(4096, relay_reader);
+        let (mut relay_writer, mut upstream_reader) = tokio::io::duplex(4096);
+        relay_writer.write_all(already_forwarded).await.unwrap();
+
+        relay_chunked(
+            &mut relay_reader,
+            &mut relay_writer,
+            already_forwarded,
+            None,
+        )
+        .await
+        .expect("chunked body with trailers should relay");
+
+        let mut remaining = vec![0; pipelined_request.len()];
+        relay_reader.read_exact(&mut remaining).await.unwrap();
+        assert_eq!(remaining, pipelined_request);
+
+        drop(relay_writer);
+        let mut forwarded = Vec::new();
+        upstream_reader.read_to_end(&mut forwarded).await.unwrap();
+        let mut expected = already_forwarded.to_vec();
+        expected.extend_from_slice(body_remainder);
+        assert_eq!(forwarded, expected);
+    }
+
+    #[tokio::test]
+    async fn relay_chunked_handles_tiny_chunks_without_an_aggregate_framing_limit() {
+        let mut chunked_body = Vec::new();
+        for _ in 0..10_000 {
+            chunked_body.extend_from_slice(b"1\r\na\r\n");
+        }
+        chunked_body.extend_from_slice(b"0\r\n\r\n");
+        let pipelined_request = b"DELETE /blocked HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let mut wire = chunked_body.clone();
+        wire.extend_from_slice(pipelined_request);
+
+        let mut reader =
+            tokio::io::BufReader::with_capacity(RELAY_BUF_SIZE, CountingReader::new(wire));
+        let mut writer = CountingWriter::default();
+        relay_chunked(&mut reader, &mut writer, &[], None)
+            .await
+            .expect("valid tiny chunks must not be rejected by an aggregate framing limit");
+
+        let reads_after_body = reader.get_ref().reads;
+        let mut remaining = vec![0; pipelined_request.len()];
+        reader.read_exact(&mut remaining).await.unwrap();
+        assert_eq!(remaining, pipelined_request);
+        assert_eq!(writer.bytes, chunked_body);
+        assert!(
+            reads_after_body < 100,
+            "connection buffering required {reads_after_body} underlying reads"
+        );
+        assert!(
+            writer.writes <= 10_001,
+            "chunk forwarding should require at most one write per chunk, got {}",
+            writer.writes
+        );
+    }
+
+    #[tokio::test]
+    async fn relay_chunked_forwards_complete_chunk_before_stream_ends() {
+        let (relay_reader, mut source_writer) = tokio::io::duplex(4096);
+        let (relay_writer, mut destination_reader) = tokio::io::duplex(4096);
+
+        let relay = tokio::spawn(async move {
+            let mut relay_reader = tokio::io::BufReader::with_capacity(4096, relay_reader);
+            let mut relay_writer = relay_writer;
+            relay_chunked(&mut relay_reader, &mut relay_writer, &[], None).await
+        });
+
+        let first_chunk = b"5\r\nhello\r\n";
+        source_writer.write_all(first_chunk).await.unwrap();
+
+        let mut forwarded = vec![0; first_chunk.len()];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            destination_reader.read_exact(&mut forwarded),
+        )
+        .await
+        .expect("complete chunk must be forwarded while the stream remains open")
+        .unwrap();
+        assert_eq!(forwarded, first_chunk);
+
+        source_writer.write_all(b"0\r\n\r\n").await.unwrap();
+        relay
+            .await
+            .expect("relay task must complete")
+            .expect("terminal chunk must relay");
     }
 
     #[test]
@@ -8575,12 +8854,12 @@ mod tests {
     /// placeholders in request headers before forwarding to upstream.
     ///
     /// This is the code path exercised when an endpoint has `protocol: rest`
-    /// and `tls: terminate` — the proxy terminates TLS, sees plaintext HTTP,
-    /// and replaces placeholder tokens with real secrets.
+    /// and terminated TLS — the proxy sees plaintext HTTP and replaces
+    /// placeholder tokens with real secrets.
     ///
-    /// Without this test, a misconfigured endpoint (missing `tls: terminate`)
-    /// silently leaks placeholder strings like `openshell:resolve:env:NVIDIA_API_KEY`
-    /// to the upstream API, causing 401 Unauthorized errors.
+    /// Without this test, a misconfigured endpoint silently leaks placeholder
+    /// strings like `openshell:resolve:env:NVIDIA_API_KEY` to the upstream
+    /// API, causing 401 Unauthorized errors.
     #[tokio::test]
     async fn relay_request_with_resolver_rewrites_credential_placeholders() {
         let provider_env: HashMap<String, String> = [(
