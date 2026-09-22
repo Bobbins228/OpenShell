@@ -3,7 +3,7 @@
 
 use std::process::Output;
 
-use super::oc::oc_command;
+use super::oc::{oc_command, oc_debug_node};
 
 const OPEN_SHELL_EXECUTABLES: &[&str] = &[
     "/opt/openshell/bin/openshell-sandbox",
@@ -48,7 +48,7 @@ impl SelinuxAudit {
 
         let mut audits = Vec::with_capacity(node_names.len());
         for node in node_names {
-            let cutoff = debug_node(&node, &["env", "LC_ALL=C", "date", "+%x %X"]).await?;
+            let cutoff = oc_debug_node(&node, &["env", "LC_ALL=C", "date", "+%x %X"]).await?;
             let (start_date, start_time) = parse_audit_cutoff(&cutoff)
                 .ok_or_else(|| format!("invalid audit cutoff from node/{node}: {cutoff:?}"))?;
             audits.push(NodeAudit {
@@ -73,7 +73,7 @@ impl SelinuxAudit {
                 &node.start_time,
             ];
             args.extend_from_slice(OPEN_SHELL_EXECUTABLES);
-            let output = debug_node(&node.name, &args).await;
+            let output = oc_debug_node(&node.name, &args).await;
             match output {
                 Ok(output) if audit_output_is_clean(&output) => {}
                 Ok(output) => failures.push(format!("node/{}: {output}", node.name)),
@@ -138,7 +138,7 @@ async fn ready_worker_nodes() -> Result<Vec<String>, String> {
 
 async fn verify_worker_enforcing(nodes: &[String]) -> Result<(), String> {
     for node in nodes {
-        let enforcing = debug_node(node, &["getenforce"]).await?;
+        let enforcing = oc_debug_node(node, &["getenforce"]).await?;
         if !parse_selinux_mode(&enforcing) {
             return Err(format!(
                 "node/{node} SELinux mode was not exactly Enforcing: {enforcing:?}"
@@ -148,44 +148,8 @@ async fn verify_worker_enforcing(nodes: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-async fn debug_node(node: &str, args: &[&str]) -> Result<String, String> {
-    let output = oc_command()
-        .args([
-            "debug",
-            &format!("node/{node}"),
-            "--quiet",
-            "--no-stdin",
-            "--no-tty",
-            "--",
-            "chroot",
-            "/host",
-        ])
-        .args(args)
-        .output()
-        .await
-        .map_err(|error| format!("failed to run oc debug node/{node}: {error}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "oc debug node/{node} failed: {}",
-            command_output(&output)
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
 fn stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).trim().to_string()
-}
-
-fn command_output(output: &Output) -> String {
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = stderr(output);
-    match (stdout.is_empty(), stderr.is_empty()) {
-        (true, true) => "no output".to_string(),
-        (false, true) => format!("stdout: {stdout}"),
-        (true, false) => format!("stderr: {stderr}"),
-        (false, false) => format!("stdout: {stdout}; stderr: {stderr}"),
-    }
 }
 
 fn parse_ready_nodes(output: &str) -> Vec<&str> {
@@ -217,9 +181,9 @@ fn audit_output_is_clean(output: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        Output, audit_output_is_clean, command_output, parse_audit_cutoff, parse_ready_nodes,
-        parse_selinux_mode,
+        Output, audit_output_is_clean, parse_audit_cutoff, parse_ready_nodes, parse_selinux_mode,
     };
+    use crate::odh_harness::oc::command_output;
     use std::process::ExitStatus;
 
     #[test]

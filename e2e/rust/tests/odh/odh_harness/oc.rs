@@ -85,24 +85,73 @@ pub async fn paired_supervisor_pod(namespace: &str, sandbox_name: &str) -> Resul
         })
 }
 
-/// Execute a command in a named container and return stdout.
-pub async fn oc_exec(
-    namespace: &str,
-    pod: &str,
-    container: &str,
-    args: &[&str],
-) -> Result<String, String> {
-    let mut command = oc_command();
-    command
-        .args(["exec", pod, "-n", namespace, "-c", container, "--"])
-        .args(args);
-    let output = command
+/// Read the SELinux label of the supervisor process from its host node.
+pub async fn supervisor_selinux_label(namespace: &str, pod: &str) -> Result<String, String> {
+    let pod_json = oc_get_json(&["get", "pod", pod, "-n", namespace, "-o", "json"]).await?;
+    let (node, pod_uid) = pod_node_and_uid(&pod_json)
+        .ok_or_else(|| format!("supervisor Pod {pod:?} has no node name or UID"))?;
+    let cgroup_pod_uid = pod_uid_cgroup_form(pod_uid);
+    let script = r#"
+pod_uid="$1"
+cgroup_pod_uid="$2"
+found=0
+for process in /proc/[0-9]*; do
+  executable=$(readlink "$process/exe" 2>/dev/null) || continue
+  [ "$executable" = "/openshell-supervisor" ] || continue
+  grep -q "pod${pod_uid}" "$process/cgroup" 2>/dev/null ||
+    grep -q "pod${cgroup_pod_uid}" "$process/cgroup" 2>/dev/null || continue
+  label=
+  IFS= read -r label < "$process/attr/current" || true
+  printf '%s %s\n' "$executable" "$label"
+  found=$((found + 1))
+done
+[ "$found" -eq 1 ]
+"#;
+    oc_debug_node(
+        node,
+        &[
+            "sh",
+            "-ec",
+            script,
+            "supervisor-label",
+            pod_uid,
+            &cgroup_pod_uid,
+        ],
+    )
+    .await
+}
+
+pub(crate) fn pod_node_and_uid(value: &Value) -> Option<(&str, &str)> {
+    Some((
+        value["spec"]["nodeName"].as_str()?,
+        value["metadata"]["uid"].as_str()?,
+    ))
+}
+
+pub(crate) fn pod_uid_cgroup_form(pod_uid: &str) -> String {
+    pod_uid.replace('-', "_")
+}
+
+/// Run a command in the host namespace of an OpenShift node debug pod.
+pub(crate) async fn oc_debug_node(node: &str, args: &[&str]) -> Result<String, String> {
+    let output = oc_command()
+        .args([
+            "debug",
+            &format!("node/{node}"),
+            "--quiet",
+            "--no-stdin",
+            "--no-tty",
+            "--",
+            "chroot",
+            "/host",
+        ])
+        .args(args)
         .output()
         .await
-        .map_err(|error| format!("failed to run oc exec in pod/{pod}: {error}"))?;
+        .map_err(|error| format!("failed to run oc debug node/{node}: {error}"))?;
     if !output.status.success() {
         return Err(format!(
-            "oc exec pod/{pod} failed: {}",
+            "oc debug node/{node} failed: {}",
             command_output(&output)
         ));
     }
@@ -138,7 +187,7 @@ fn supervisor_pod_from_json(value: &Value) -> Option<&str> {
         .and_then(|pod| pod["metadata"]["name"].as_str())
 }
 
-fn command_output(output: &std::process::Output) -> String {
+pub(crate) fn command_output(output: &std::process::Output) -> String {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
     match (stdout.is_empty(), stderr.is_empty()) {
@@ -153,7 +202,9 @@ fn command_output(output: &std::process::Output) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::{sandbox_id_from_json, supervisor_pod_from_json};
+    use super::{
+        pod_node_and_uid, pod_uid_cgroup_form, sandbox_id_from_json, supervisor_pod_from_json,
+    };
 
     #[test]
     fn resolves_sandbox_id_from_named_sandbox() {
@@ -196,6 +247,27 @@ mod tests {
                 ]
             })),
             None
+        );
+    }
+
+    #[test]
+    fn extracts_node_and_uid_from_pod() {
+        let pod = json!({
+            "metadata": {"uid": "123e4567-e89b-12d3-a456-426614174000"},
+            "spec": {"nodeName": "worker-a"}
+        });
+
+        assert_eq!(
+            pod_node_and_uid(&pod),
+            Some(("worker-a", "123e4567-e89b-12d3-a456-426614174000"))
+        );
+    }
+
+    #[test]
+    fn formats_pod_uid_for_systemd_cgroup() {
+        assert_eq!(
+            pod_uid_cgroup_form("123e4567-e89b-12d3-a456-426614174000"),
+            "123e4567_e89b_12d3_a456_426614174000"
         );
     }
 }

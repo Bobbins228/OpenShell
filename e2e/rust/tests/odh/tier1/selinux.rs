@@ -9,30 +9,12 @@ use openshell_e2e::harness::sandbox::SandboxGuard;
 use serial_test::serial;
 use tempfile::NamedTempFile;
 
-use crate::odh_harness::oc::{oc_exec, paired_supervisor_pod};
+use crate::odh_harness::oc::{paired_supervisor_pod, supervisor_selinux_label};
 use crate::odh_harness::selinux::SelinuxAudit;
 
 /// OCP's container `SELinux` type. The complete label includes per-pod MLS/MCS
 /// categories, which vary and must not be hard-coded.
 const CONTAINER_TYPE: &str = ":container_t:";
-
-// The Kubernetes driver runs the control-side supervisor in a separate Pod.
-// Discover its exact executable there rather than assuming a shared PID
-// namespace with the workload.
-const SUPERVISOR_LABEL_SCRIPT: &str = r#"
-found=0
-for process in /proc/[0-9]*; do
-  executable=$(tr '\0' '\n' < "$process/cmdline" 2>/dev/null | head -n 1)
-  case "$executable" in
-    /openshell-supervisor) ;;
-    *) continue ;;
-  esac
-  label=$(cat "$process/attr/current" 2>/dev/null) || exit 1
-  printf '%s %s\n' "$executable" "$label"
-  found=$((found + 1))
-done
-[ "$found" -eq 1 ]
-"#;
 
 async fn run_audited<F, Fut>(scenario: &str, test: F) -> Result<(), String>
 where
@@ -78,13 +60,7 @@ async fn supervisor_runs_in_container_selinux_domain() {
         let mut sandbox = SandboxGuard::create(&[]).await?;
         let namespace = std::env::var("NAMESPACE").unwrap_or_else(|_| "openshell".to_string());
         let supervisor_pod = paired_supervisor_pod(&namespace, &sandbox.name).await?;
-        let label_result = oc_exec(
-            &namespace,
-            &supervisor_pod,
-            "supervisor",
-            &["sh", "-ec", SUPERVISOR_LABEL_SCRIPT],
-        )
-        .await;
+        let label_result = supervisor_selinux_label(&namespace, &supervisor_pod).await;
         sandbox.cleanup().await;
         let label = label_result?;
         for line in label.lines() {
@@ -137,53 +113,6 @@ process:
     })
     .await
     .expect("SELinux filesystem-denial scenario and audit should pass");
-}
-
-#[test]
-fn supervisor_discovery_requires_one_supervisor_process() {
-    let proc = tempfile::tempdir().unwrap();
-    let process = proc.path().join("42");
-    std::fs::create_dir_all(process.join("attr")).unwrap();
-    std::fs::write(
-        process.join("attr/current"),
-        "system_u:system_r:container_t:s0",
-    )
-    .unwrap();
-    let script = SUPERVISOR_LABEL_SCRIPT.replace("/proc/", &format!("{}/", proc.path().display()));
-
-    let run = |processes: &[(&str, &str)]| {
-        for entry in std::fs::read_dir(proc.path()).unwrap() {
-            let entry = entry.unwrap();
-            if entry.file_name() != "42" {
-                std::fs::remove_dir_all(entry.path()).unwrap();
-            }
-        }
-        for (pid, args) in processes {
-            let process = proc.path().join(pid);
-            std::fs::create_dir_all(process.join("attr")).unwrap();
-            std::fs::write(
-                process.join("attr/current"),
-                "system_u:system_r:container_t:s0",
-            )
-            .unwrap();
-            std::fs::write(process.join("cmdline"), args).unwrap();
-        }
-        std::process::Command::new("sh")
-            .args(["-ec", &script])
-            .output()
-            .unwrap()
-    };
-
-    assert!(run(&[("42", "/openshell-supervisor\0")]).status.success());
-    assert!(
-        !run(&[
-            ("42", "/openshell-supervisor\0"),
-            ("43", "/openshell-supervisor\0"),
-        ])
-        .status
-        .success()
-    );
-    assert!(!run(&[("42", "/openshell-sandbox\0")]).status.success());
 }
 
 #[test]
