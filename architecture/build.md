@@ -23,7 +23,7 @@ OpenShell builds these main artifacts:
 | VM driver/runtime assets | `crates/openshell-driver-vm` |
 | Published docs site | `docs/` rendered by Fern config in `fern/` |
 
-Sandbox community images are built outside this repository.
+Workload images are standard OCI images supplied by operators or users.
 
 ## Build Features
 
@@ -101,6 +101,12 @@ image's libc. The separate `openshell-supervisor` binary is dynamically linked
 with GNU libc and uses the same glibc 2.28 compatibility floor as the gateway.
 
 ## Container Builds
+
+Docker E2E tool-dependent workloads use a dedicated Noble-based fixture,
+separate from the product's minimal default image. The fixture supplies the
+test identity and tools, with Python aligned to the host test runner for
+serialized callable compatibility. Default-image coverage retains the product
+image. Other compute-driver test lanes retain their existing workload fixtures.
 
 The Docker image pipeline is a two-step flow: build the Rust binary natively
 for the target architecture, then assemble the container image from the
