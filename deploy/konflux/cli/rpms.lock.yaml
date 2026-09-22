@@ -494,13 +494,13 @@ arches:
     name: libcom_err
     evr: 1.46.5-8.el9
     sourcerpm: e2fsprogs-1.46.5-8.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libcurl-7.76.1-40.el9_8.5.aarch64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libcurl-7.76.1-40.el9_8.7.aarch64.rpm
     repoid: ubi-9-baseos-rpms
-    size: 292322
-    checksum: sha256:ea6c3ade86939df7a985ae71e4c5100731962add54295fd40660a2f2c2f85f1d
+    size: 292483
+    checksum: sha256:408a3da221a1d3856a4b9ab7a7c70901430f71521ef9d05f9b847c0deb27b160
     name: libcurl
-    evr: 7.76.1-40.el9_8.5
-    sourcerpm: curl-7.76.1-40.el9_8.5.src.rpm
+    evr: 7.76.1-40.el9_8.7
+    sourcerpm: curl-7.76.1-40.el9_8.7.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/l/libdb-5.3.28-57.el9_6.aarch64.rpm
     repoid: ubi-9-baseos-rpms
     size: 727417
@@ -781,20 +781,20 @@ arches:
     name: openldap
     evr: 2.6.8-4.el9
     sourcerpm: openldap-2.6.8-4.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/o/openssh-9.9p1-9.el9_8.aarch64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/o/openssh-9.9p1-11.el9_8.aarch64.rpm
     repoid: ubi-9-baseos-rpms
-    size: 431997
-    checksum: sha256:57fdab98de5639f0f1a4714700eeeae737876a9609ee2c8449bffb489c3c6d96
+    size: 432812
+    checksum: sha256:d8bcf6348f5ee9d840e7f74eaaa53801cb9c48c1184c7254dd06aa73f597c690
     name: openssh
-    evr: 9.9p1-9.el9_8
-    sourcerpm: openssh-9.9p1-9.el9_8.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/o/openssh-clients-9.9p1-9.el9_8.aarch64.rpm
+    evr: 9.9p1-11.el9_8
+    sourcerpm: openssh-9.9p1-11.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/o/openssh-clients-9.9p1-11.el9_8.aarch64.rpm
     repoid: ubi-9-baseos-rpms
-    size: 769478
-    checksum: sha256:2f1657ebe0b8b96d9ecdfeb709426733d57aa7ec565eb805532d0b1bc9adcb20
+    size: 770368
+    checksum: sha256:b5f49e9e5d66075859596aa71f62bc8cc951d50129dd43543b6aacd22386b1c1
     name: openssh-clients
-    evr: 9.9p1-9.el9_8
-    sourcerpm: openssh-9.9p1-9.el9_8.src.rpm
+    evr: 9.9p1-11.el9_8
+    sourcerpm: openssh-9.9p1-11.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/aarch64/baseos/os/Packages/o/openssl-3.5.8-1.el9_8.aarch64.rpm
     repoid: ubi-9-baseos-rpms
     size: 1546056
@@ -1534,13 +1534,13 @@ arches:
     name: libcom_err
     evr: 1.46.5-8.el9
     sourcerpm: e2fsprogs-1.46.5-8.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libcurl-7.76.1-40.el9_8.5.x86_64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libcurl-7.76.1-40.el9_8.7.x86_64.rpm
     repoid: ubi-9-baseos-rpms
-    size: 297551
-    checksum: sha256:428b87ca3eb808d769f6f0f68019a97d3c487c86268ccff2ab7ad7223beab01e
+    size: 296930
+    checksum: sha256:044d7a379f0f0f6ed25b9d41439dedfb55b390108ae5a09d4acc6b3565c39ae1
     name: libcurl
-    evr: 7.76.1-40.el9_8.5
-    sourcerpm: curl-7.76.1-40.el9_8.5.src.rpm
+    evr: 7.76.1-40.el9_8.7
+    sourcerpm: curl-7.76.1-40.el9_8.7.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/l/libdb-5.3.28-57.el9_6.x86_64.rpm
     repoid: ubi-9-baseos-rpms
     size: 755192
@@ -1821,20 +1821,20 @@ arches:
     name: openldap
     evr: 2.6.8-4.el9
     sourcerpm: openldap-2.6.8-4.el9.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssh-9.9p1-9.el9_8.x86_64.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssh-9.9p1-11.el9_8.x86_64.rpm
     repoid: ubi-9-baseos-rpms
-    size: 442241
-    checksum: sha256:cd14a09ebe95a8d09a779838bf71f8e05f809cbd1d7ef4553294284d35249a60
+    size: 443050
+    checksum: sha256:9fad2dc75044e577f03442e524b58223239eba14b12adbf8d14eeb82d22b596e
     name: openssh
-    evr: 9.9p1-9.el9_8
-    sourcerpm: openssh-9.9p1-9.el9_8.src.rpm
-  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssh-clients-9.9p1-9.el9_8.x86_64.rpm
+    evr: 9.9p1-11.el9_8
+    sourcerpm: openssh-9.9p1-11.el9_8.src.rpm
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssh-clients-9.9p1-11.el9_8.x86_64.rpm
     repoid: ubi-9-baseos-rpms
-    size: 799148
-    checksum: sha256:2e10d31aa0d2c2aaf521b4b1b46cd76b734a781a9ffaf496f8d39c53f4897705
+    size: 799504
+    checksum: sha256:445f8ef1a60229d575547695da0bf2a05fb51408bce01d06548a5273123c8877
     name: openssh-clients
-    evr: 9.9p1-9.el9_8
-    sourcerpm: openssh-9.9p1-9.el9_8.src.rpm
+    evr: 9.9p1-11.el9_8
+    sourcerpm: openssh-9.9p1-11.el9_8.src.rpm
   - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/x86_64/baseos/os/Packages/o/openssl-3.5.8-1.el9_8.x86_64.rpm
     repoid: ubi-9-baseos-rpms
     size: 1569041
