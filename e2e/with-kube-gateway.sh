@@ -1089,6 +1089,13 @@ if [ "${OPENSHELL_E2E_KUBE_BUILD_IMAGES}" = "1" ]; then
     reuse_sandbox_image=1
     echo "Reusing existing sandbox image ${sandbox_image}"
   fi
+  if [ "${SANDBOX_RUNTIME_IMAGE}" != "${sandbox_image}" ]; then
+    if e2e_image_reference_has_digest "${SANDBOX_RUNTIME_IMAGE}"; then
+      echo "ERROR: digest-pinned SANDBOX_IMAGE requires OPENSHELL_E2E_KUBE_BUILD_IMAGES=0" >&2
+      exit 2
+    fi
+    docker tag "${sandbox_image}" "${SANDBOX_RUNTIME_IMAGE}"
+  fi
   if [ "${OPENSHELL_E2E_EXTERNAL_COMPUTE_DRIVER:-0}" != "1" ] \
      || ! docker image inspect "${supervisor_image}" >/dev/null 2>&1; then
     CONTAINER_ENGINE=docker IMAGE_REGISTRY="${REGISTRY_VALUE}" IMAGE_TAG="${IMAGE_TAG_VALUE}" \
@@ -1121,9 +1128,10 @@ elif [ "${OPENSHELL_E2E_KUBE_BUILD_IMAGES}" = "1" ] \
   kind_cluster_name="${KUBE_CONTEXT#kind-}"
   kind_images=("${GATEWAY_IMAGE}")
   # The CI workflow loads its published sandbox archive before invoking this
-  # wrapper. Only load a sandbox image here when this script rebuilt it.
-  if [ "${reuse_sandbox_image}" != "1" ]; then
-    kind_images+=("${REGISTRY_VALUE}/sandbox:${IMAGE_TAG_VALUE}")
+  # wrapper. Load a replacement only when this script rebuilt or retagged it.
+  if [ "${reuse_sandbox_image}" != "1" ] \
+     || [ "${SANDBOX_RUNTIME_IMAGE}" != "${sandbox_image}" ]; then
+    kind_images+=("${SANDBOX_RUNTIME_IMAGE}")
   fi
   # The CI workflow loads its published supervisor archive before invoking this
   # wrapper. Only load a supervisor image here when this script rebuilt it.
@@ -1131,7 +1139,6 @@ elif [ "${OPENSHELL_E2E_KUBE_BUILD_IMAGES}" = "1" ] \
      || [ "${SUPERVISOR_IMAGE}" != "${BUILD_SUPERVISOR_IMAGE}" ]; then
     kind_images+=("${SUPERVISOR_IMAGE}")
   fi
-  if docker image inspect "${SANDBOX_RUNTIME_IMAGE}" >/dev/null 2>&1; then kind_images+=("${SANDBOX_RUNTIME_IMAGE}"); fi
   for image in "${kind_images[@]}"; do
     echo "Loading ${image} into kind cluster ${kind_cluster_name}..."
     kind load docker-image "${image}" --name "${kind_cluster_name}"
