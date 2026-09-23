@@ -1159,6 +1159,9 @@ impl PodmanComputeDriver {
                         &workload_id,
                         &uuid::Uuid::new_v4().to_string(),
                         &identity,
+                        crate::isolation::userns_preserves_host_groups(
+                            self.config.userns.as_deref(),
+                        ),
                         child_env,
                         &launch_authentication,
                     )?;
@@ -1501,6 +1504,7 @@ impl PodmanComputeDriver {
                 &container_id,
                 generation.as_str(),
                 &restart_metadata.workload_identity,
+                crate::isolation::userns_preserves_host_groups(self.config.userns.as_deref()),
                 restart_metadata.child_env,
                 &launch_authentication,
             )?;
