@@ -92,6 +92,21 @@ Use gateway metadata, deployment values, or the user's setup notes to identify t
 
 Before debugging the compute platform, inspect gateway logs for failures in dependencies initialized before the listener becomes ready.
 
+For resource-admission failures, distinguish disabled caller driver config from
+missing resource approval. Helm defaults `server.drivers.kubernetes.allowDriverConfig`
+to false and `resourceAdmission.enabled` to true. Existing PVCs, RuntimeClasses,
+and PriorityClasses need matching administrator-owned labels; namespace
+membership and read-only access do not grant approval. GPU devices and
+operator-selected image-pull Secrets do not need admission labels. In managed
+mode, inspect the configured source image-pull Secret in the gateway namespace
+and the gateway-owned copy in the workspace namespace. Legacy workloads without
+admission provenance need recreation. Do not
+automatically label control-plane resources or disable enforcement as a repair.
+
+For out-of-tree compute drivers, also check that their versioned admission-policy
+acknowledgement matches the gateway's policy. Configure standalone driver policy
+through its administrator-owned `--admission-config-json` option.
+
 For out-of-tree compute drivers, confirm the selected driver name and socket agree across CLI flags or `gateway.toml`, and that the operator-owned driver is running before the gateway starts:
 
 ```bash
@@ -272,6 +287,12 @@ through the CLI remains stopped. Kubernetes sandboxes are cluster-owned and do
 not follow this local gateway lifecycle. Internal and external drivers follow
 the same rule: `GetCapabilities.gateway_manages_lifecycle` must be true for the
 gateway to run shutdown and startup sweeps.
+
+The gateway also drains supervisor-session ownership cleanup before exiting.
+If shutdown reports `Gateway supervisor session cleanup incomplete`, inspect
+the associated persistence errors: a stopped supervisor's owner record may
+remain until its lease expires and temporarily block reconnection. Successful
+compute stop alone does not confirm that session cleanup finished.
 
 ### Step 5: Check Podman-Backed Gateways
 

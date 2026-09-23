@@ -151,6 +151,7 @@ e2e_write_podman_gateway_config() {
         if [ "${external_driver}" = "1" ]; then
           printf 'socket_path = %s\n' "$(e2e_podman_toml_string "${driver_socket}")"
         else
+          printf 'allow_driver_config = true\n'
           printf 'network_name = %s\n' "$(e2e_podman_toml_string "${network_name}")"
           printf 'gateway_port = %s\n' "${gateway_port}"
           printf 'default_image = %s\n' "$(e2e_podman_toml_string "${sandbox_image}")"
@@ -168,6 +169,8 @@ e2e_write_podman_gateway_config() {
           if [ -n "${podman_socket}" ]; then
             printf 'socket_path = %s\n' "$(e2e_podman_toml_string "${podman_socket}")"
           fi
+          printf '\n[openshell.drivers.podman.resource_admission]\n'
+          printf 'enabled = false\n'
         fi
         e2e_write_gateway_jwt_config "${jwt_dir}" "${gateway_id}"
         if [ "${oidc_mode}" != "1" ]; then

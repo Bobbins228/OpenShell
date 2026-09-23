@@ -95,7 +95,25 @@ in-memory extension. Replay reauthorizes original and current effective scopes,
 requires the same effective payload, and reruns current interceptor validation.
 Interceptors cannot mutate the request UUID. Server-marked replay suppresses
 post-commit observation, which remains best-effort rather than an outbox.
-Credential capabilities and streaming execution require separate contracts.
+Credential capabilities require separate contracts.
+
+Both exec RPCs share keyed admission but defer completion to the SSH producer.
+The initial interactive Start uses the exec request schema under a distinct RPC
+namespace; later stdin and resize frames are not replayable inputs. Admission
+resolves the public sandbox name and workspace, durably binds both original and
+effective sandbox UUIDs, and rejects same-name replacements. When the original
+and effective selectors match, both authorization lookups must resolve the same
+workspace and sandbox identities before admission. A different effective target
+is allowed only when the selector changes. The owner checks the effective UUID
+again before relay opening, then hands its CAS-only finalizer to the owned producer,
+releasing the shared admission-worker permit after handoff. Only a confirmed
+remote exit records a terminal marker and starts 24-hour retention. Synthetic
+timeouts, disconnects without exit confirmation, and persistence failures leave
+permanent unresolved claims. Duplicates never launch, attach, or replay output:
+pending records report uncertainty, and terminal records report stream
+unavailability. Existing transport cancellation behavior remains unchanged.
+Exec timeouts retain the public duration's precision and presence: an absent
+timeout is unbounded, while an explicit zero is a finite timeout.
 
 The gateway listens on one service port and multiplexes gRPC and HTTP traffic.
 The default local single-user deployment mode is mTLS user authentication:
@@ -1025,6 +1043,15 @@ sequenceDiagram
 The same relay pattern backs interactive SSH, command execution, file sync, and
 local service forwarding. The gateway tracks live sessions in memory and
 persists session records so tokens can expire or be revoked.
+
+Graceful gateway shutdown closes supervisor-session admission before stopping
+local compute. It then signals the remaining control sessions to exit and waits
+up to ten seconds for their cleanup, including conditional deletion of persisted
+ownership. Pending connection setup and sessions already removed from the live
+registry remain tracked until cleanup finishes. This lets a replacement
+supervisor claim ownership immediately after restart without deleting a newer
+replica's claim. An incomplete drain is reported as a shutdown error. Closing
+these control sessions does not stop Kubernetes-owned workloads.
 
 Relay liveness has two backstops so a reset supervisor session cannot leave a
 request parked forever. The gateway runs server-side HTTP/2 keepalive on
