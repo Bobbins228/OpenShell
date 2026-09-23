@@ -280,6 +280,12 @@ the shared raw byte relay after the existing adapter gates. Forward HTTP retains
 its guarded single-request relay while sharing authorization, request context,
 policy-pinning, and destination boundaries.
 Adapter-specific response and OCSF event shapes remain at the protocol boundary.
+HTTP response framing and connection persistence are separate decisions. After
+forwarding a complete closing response (explicit `Connection: close` or HTTP/1.0
+without keep-alive), the relay flushes and shuts down downstream writes before
+ending the exchange, including TLS close notification. Response middleware
+preserves this lifetime rule; persistent responses remain eligible for reuse.
+
 An explicit `protocol: tcp` endpoint with a valid DNS hostname opts into native
 DNS and transparent TCP when the selected runtime advertises that substrate.
 Hostless `allowed_ips` and literal-IP selectors remain available only to the
@@ -648,7 +654,9 @@ sandbox workload directly. The relay supports:
 
 - Attachment to the canonical main process through the `openshell-main` SSH
   subsystem. The supervisor owns its retained PTY or pipes, a 1 MiB replay
-  buffer, and a single stdin lease across client disconnects.
+  buffer, and a single stdin lease across client disconnects. Ctrl-C interrupts
+  the foreground process. For read-only attachments, Ctrl-C only exits the
+  current viewer.
 - Independent interactive shell sessions.
 - Command execution. Commands run through a login shell (`bash -lc`) by default,
   so the first of the user's `.bash_profile`, `.bash_login`, or `.profile` is
