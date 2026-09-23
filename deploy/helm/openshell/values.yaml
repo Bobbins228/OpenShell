@@ -7,6 +7,15 @@
 # server.externalDbSecret because the default SQLite backend is per pod.
 replicaCount: 1
 
+global:
+  image:
+    # -- Shared OpenShell image registry. Individual image registries take precedence.
+    registry: ghcr.io/nvidia
+    # -- Shared OpenShell image tag. Defaults to the chart appVersion when empty.
+    tag: ""
+    # -- Shared OpenShell image pull policy. Individual image pull policies take precedence.
+    pullPolicy: IfNotPresent
+
 workload:
   # -- Gateway workload controller kind. Use `statefulset` for the default
   # SQLite database, or `deployment` when server.externalDbSecret points at an
@@ -18,56 +27,70 @@ workload:
   # StatefulSet identity or storage semantics.
   allowMultiReplicaStatefulSet: false
 
-image:
-  # -- Gateway image repository.
-  repository: ghcr.io/nvidia/openshell/gateway
-  # -- Gateway image pull policy.
-  pullPolicy: IfNotPresent
-  # -- Gateway image tag. Defaults to the chart appVersion when empty.
-  tag: ""
+gateway:
+  image:
+    # -- Gateway image registry. Empty uses global.image.registry.
+    registry: ""
+    # -- Gateway image repository.
+    repository: openshell/gateway
+    # -- Gateway image pull policy. Empty uses global.image.pullPolicy.
+    pullPolicy: null
+    # -- Gateway image tag. Defaults to the chart appVersion when empty.
+    tag: ""
+    # -- Gateway image digest. When set, this takes precedence over tag.
+    digest: ""
 
-# Supervisor image for the openshell-sandbox binary injected into sandbox pods.
-# The default repository and empty tag use the version-pinned image built into
-# the gateway. Changing the repository or setting a tag enables a Helm override.
+# Trusted workload-side runtime image.
+sandboxRuntime:
+  image:
+    # -- Sandbox runtime image registry. Empty uses global.image.registry.
+    registry: ""
+    # -- Sandbox runtime image repository.
+    repository: openshell/sandbox
+    # -- Sandbox runtime image pull policy. Empty uses global.image.pullPolicy.
+    pullPolicy: null
+    # -- Sandbox runtime image tag. Defaults to the chart appVersion when empty.
+    tag: ""
+    # -- Sandbox runtime image digest. When set, this takes precedence over tag.
+    digest: ""
+
+# Trusted control-side runtime image.
 supervisor:
   image:
-    # -- Supervisor image repository. Changing it uses the effective gateway image tag unless tag is also set.
-    repository: ghcr.io/nvidia/openshell/supervisor
-    # -- Sandbox supervisor pull policy. Leave unset to use the Kubernetes
-    # image default. Prefer always, if_not_present, or never; the chart also
-    # accepts legacy Kubernetes spellings Always, IfNotPresent, and Never.
+    # -- Supervisor image registry. Empty uses global.image.registry.
+    registry: ""
+    # -- Supervisor image repository.
+    repository: openshell/supervisor
+    # -- Supervisor image pull policy. Empty uses global.image.pullPolicy.
+    # Prefer always, if_not_present, or never; the chart also accepts legacy
+    # Kubernetes spellings Always, IfNotPresent, and Never.
     pullPolicy: null
-    # -- Supervisor image tag override. Empty uses the version pinned into the gateway unless repository is changed.
+    # -- Supervisor image tag. Defaults to the chart appVersion when empty.
     tag: ""
-  # -- How the supervisor binary is delivered into sandbox pods.
-  # Empty (default) = auto-detect from cluster version:
-  #   K8s >= v1.35 -> "image-volume" (ImageVolume enabled by default; GA in v1.36)
-  #   K8s < v1.35 -> "init-container" (copies via init container + emptyDir)
-  # On K8s v1.33-v1.34 with the ImageVolume feature gate manually enabled,
-  # set this to "image-volume" explicitly.
-  sideloadMethod: ""
-  # -- Supervisor pod topology for Kubernetes sandboxes.
-  # "combined" runs the current single supervisor container in the agent pod.
-  # "sidecar" runs network enforcement in a dedicated sidecar and the process
-  # supervisor as a low-capability wrapper in the agent container.
-  topology: "combined"
-  sidecar:
-    # -- UID for relaxed long-running network sidecars in sidecar topology.
-    # Strict process/binary-aware sidecars run as UID 0 so Kubernetes grants
-    # the required /proc inspection capabilities into the effective set. The
-    # network init container installs nftables rules that exempt the effective
-    # sidecar UID.
-    proxyUid: 1337
-    # -- Keep process/binary-aware network policy enabled in sidecar topology.
-    # When false, the network sidecar runs as proxyUid, drops the extra /proc
-    # inspection capabilities, and enforces endpoint/L7 policy without matching
-    # policy.binaries.
-    processBinaryAwareNetworkPolicy: true
+    # -- Supervisor image digest. When set, this takes precedence over tag.
+    digest: ""
+  sandboxRuntime:
+    # -- Required operator acknowledgement that the cluster CNI enforces NetworkPolicy.
+    networkPolicyEnforced: false
+    # -- Workload boundary TLS listener port.
+    boundaryPort: 5500
+
+sandbox:
+  image:
+    # -- Default standalone sandbox image repository.
+    repository: nvcr.io/nvidia/base/ubuntu
+    # -- Sandbox image tag. Defaults to latest when empty.
+    tag: "24.04"
+    # -- Sandbox image digest. When set, this takes precedence over tag.
+    digest: ""
+    # -- Sandbox image pull policy. Leave unset to use the Kubernetes image default.
+    pullPolicy: null
 
 # -- Operator-owned corporate forward proxy for policy-approved TLS egress
 # from Kubernetes sandboxes. The workload cannot select or override it.
 upstreamProxy:
-  # -- HTTP proxy URL in http://host:port form. HTTPS-to-proxy is not supported.
+  # -- Proxy URL in http://host:port or https://host:port form. An https:// proxy
+  # whose certificate is not publicly trusted also needs caBundle below.
   url: ""
   # -- Comma-separated destinations that bypass only the corporate proxy.
   noProxy: ""
@@ -80,6 +103,22 @@ upstreamProxy:
   authAllowInsecure: false
   # -- Last-resort option for hostname-filtering proxy ACLs. It lets the proxy resolve CONNECT targets.
   connectByHostname: false
+  caBundle:
+    # -- ConfigMap in the release namespace holding the corporate proxy CA bundle.
+    # Required for an https:// proxy with a private CA, and for a TLS-intercepting
+    # proxy that re-signs upstream certificates. The gateway reads it and stages it
+    # into each sandbox's immutable supervisor bootstrap Secret, so the anchor stays
+    # in the gateway's trust domain rather than the workload namespace.
+    # Supply only the CA that signs your proxy's certificate, or that the proxy
+    # re-signs intercepted upstream certificates with. Public roots already come
+    # from the supervisor image and its TLS stack, so a full merged trust bundle
+    # (for example an OpenShift config.openshift.io/inject-trusted-cabundle
+    # ConfigMap) adds hundreds of kilobytes of duplicated roots and can exceed
+    # the sandbox boundary's control-frame budget.
+    configMapName: ""
+    # -- Key inside that ConfigMap. Change this only to reuse an existing
+    # ConfigMap whose key is not ca.crt.
+    key: ca.crt
 
 # -- Image pull secrets attached to gateway and helper pods.
 imagePullSecrets: []
@@ -224,13 +263,6 @@ server:
   # from this Secret instead of using dbUrl. The Secret must contain a
   # `uri` key, e.g. postgresql://user:pass@host:5432/dbname.
   externalDbSecret: ""
-  # -- Default sandbox image used when requests do not specify one.
-  sandboxImage: "ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
-  # -- Pull policy for sandbox pods. Leave unset to use the Kubernetes image
-  # default (Always for :latest, IfNotPresent otherwise). Prefer always,
-  # if_not_present, or never; the chart also accepts legacy Kubernetes spellings
-  # Always, IfNotPresent, and Never.
-  sandboxImagePullPolicy: null
   # -- Image pull secrets attached to sandbox pods. Referenced Secrets must exist
   # in the sandbox namespace.
   sandboxImagePullSecrets: []
@@ -269,15 +301,16 @@ server:
   # Linux 5.12+. When enabled, container UID 0 maps to an unprivileged host
   # UID and capabilities become namespaced.
   enableUserNamespaces: false
-  # -- Kubernetes AppArmor profile requested for sandbox agent containers.
-  # Default Unconfined avoids runtime/default AppArmor blocking the supervisor's
-  # network namespace mount setup on AppArmor-enabled nodes. Set to "" to omit
-  # the field, "RuntimeDefault" to force the runtime default profile, or
-  # "Localhost/profile-name" for an operator-managed localhost profile.
-  appArmorProfile: "Unconfined"
   # Kubernetes compute driver settings.
   drivers:
     kubernetes:
+      # -- Allow caller driver JSON; external resources still require approval.
+      allowDriverConfig: false
+      resourceAdmission:
+        # -- Require operator approval labels on external sandbox attachments (GPU attachments exempt).
+        enabled: true
+        # -- Replacement label map; null uses the built-in admission labels. Empty map is invalid when enabled.
+        requiredLabels: null
       # -- How workspaces map to Kubernetes namespaces.
       # "shared" (default): all sandboxes in a single namespace.
       # "managed": auto-creates per-workspace namespaces.
@@ -335,16 +368,21 @@ server:
       # Empty = Helm release namespace. A dedicated namespace is RECOMMENDED
       # to isolate OpenShell-managed Secrets from other workloads.
       namespace: ""
-      # -- Deprecated compatibility field. Credential storage no longer supports user-authored namespace references.
-      allowReferenceNamespace: false
+      # -- Create the credential namespace. Requires a namespace other than the
+      # release namespace. The Namespace is retained on uninstall so stored
+      # credentials survive; an existing Namespace not owned by this release is
+      # left untouched.
+      createNamespace: false
       rbac:
         # -- Create a Role/RoleBinding granting the gateway ServiceAccount read/write access to managed provider Secrets.
         create: true
     vault:
       # -- Enable the in-tree Vault credential driver.
       enabled: false
-      # -- Vault service base URL, for example http://vault.vault.svc.cluster.local:8200.
+      # -- Vault service base URL. Non-loopback endpoints must use HTTPS, for example https://vault.vault.svc.cluster.local:8200.
       address: ""
+      # -- ConfigMap containing the private Vault CA certificate bundle in the ca.crt key. Leave empty to use platform trust roots.
+      caConfigMapName: ""
       # -- Default KV mount name.
       mount: secret
       # -- Default KV engine version. Use "1" or "2".
@@ -419,6 +457,12 @@ server:
   oidc:
     # -- OIDC issuer URL (e.g. https://keycloak.example.com/realms/openshell).
     issuer: ""
+    # -- Development only: permit cleartext OIDC requests to numeric loopback
+    # addresses. This never permits HTTP to hostnames or non-loopback addresses.
+    dangerouslyAllowInsecureHttp: false
+    # -- Additional trusted HTTPS origins allowed to serve JWKS. The issuer
+    # origin is always allowed. Entries must not include a path or query.
+    jwksAllowedOrigins: []
     # -- Expected audience claim for the API resource server.
     # This should match the server's --oidc-audience, NOT the CLI client ID.
     audience: "openshell-cli"

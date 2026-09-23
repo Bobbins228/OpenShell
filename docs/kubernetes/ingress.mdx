@@ -5,7 +5,7 @@ title: "Ingress"
 sidebar-title: "Ingress"
 description: "Expose the OpenShell gateway externally using the Kubernetes Gateway API and a GRPCRoute."
 keywords: "Generative AI, Cybersecurity, Kubernetes, Gateway API, Envoy Gateway, GRPCRoute, Ingress, External Access"
-position: 4
+position: 5
 ---
 
 By default, the OpenShell gateway is only reachable inside the cluster. To let CLI clients connect without a `kubectl port-forward`, expose the gateway through an ingress.
@@ -57,6 +57,7 @@ helm upgrade --install openshell \
   oci://ghcr.io/nvidia/openshell/helm-chart \
   --version <version> \
   --namespace openshell \
+  --set supervisor.sandboxRuntime.networkPolicyEnforced=true \
   --set grpcRoute.enabled=true \
   --set grpcRoute.gateway.create=true \
   --set grpcRoute.gateway.className=eg
@@ -113,6 +114,7 @@ helm upgrade --install openshell \
   oci://ghcr.io/nvidia/openshell/helm-chart \
   --version <version> \
   --namespace openshell \
+  --set supervisor.sandboxRuntime.networkPolicyEnforced=true \
   --set grpcRoute.enabled=true \
   --set grpcRoute.gateway.create=true \
   --set grpcRoute.gateway.className=eg \

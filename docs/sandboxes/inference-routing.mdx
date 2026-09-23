@@ -1,8 +1,8 @@
 ---
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-title: "Provider-backed Inference"
-sidebar-title: "Provider-backed Inference"
+title: "Inference"
+sidebar-title: "Inference"
 description: "Grant a sandbox access to model providers through provider profiles, attachments, and native endpoints."
 keywords: "Generative AI, Cybersecurity, Inference, Provider Profiles, Credentials, LLM"
 position: 8
@@ -28,7 +28,7 @@ Start from an existing profile, review its access, and import it under a new
 ID. For example, export the NVIDIA profile:
 
 ```shell
-openshell provider profile export nvidia -o yaml > nvidia-native.yaml
+openshell provider profile export nvidia -o yaml --global > nvidia-native.yaml
 ```
 
 In `nvidia-native.yaml`, change `id` to `nvidia-native`, give the profile a
@@ -60,6 +60,7 @@ openshell provider create \
 
 openshell sandbox create \
   --name inference-demo \
+  --from registry.example.com/team/python-agent:1.0 \
   --provider nvidia-prod \
   -- python app.py
 ```
@@ -90,9 +91,11 @@ hosted service. Set a new profile ID, retain only the endpoints and credentials
 the workload needs, and name the actual client binaries. Provider attachment
 does not select or rewrite a model.
 
-This release still loads built-in profiles for compatibility, so existing
-providers continue to resolve their profiles. Treat those built-ins as starting
-templates for new provider definitions rather than the primary setup workflow.
+The gateway resolves a provider against the profiles you imported, so a provider
+whose profile is missing fails at sandbox creation with a message naming the
+profile and the import command. Treat the example profiles in
+[`providers/`](https://github.com/NVIDIA/OpenShell/tree/main/providers) as
+starting templates you copy and adapt, not as defaults.
 
 ## Attach a Provider to a Running Sandbox
 
@@ -119,9 +122,11 @@ openshell sandbox provider detach inference-demo nvidia-prod
 
 ## Use a Custom or Self-hosted Endpoint
 
-Do not reuse the built-in `openai` or `anthropic` profile for an alternate
-host. Those profiles bind credentials to the public vendor endpoints. Import a
-profile that names the intended endpoint and the binaries that may call it.
+Do not reuse the `openai` or `anthropic` example profile for an alternate host.
+Those profiles bind credentials to the public vendor endpoints, and a provider
+that points `OPENAI_BASE_URL` elsewhere is treated as endpointless rather than
+silently carrying the credential to the new host. Import a profile that names the
+intended endpoint and the binaries that may call it.
 
 For a credentialless Ollama server on the gateway host, save this profile as
 `ollama-openai.yaml`:
@@ -157,6 +162,7 @@ openshell provider create --name ollama --type ollama-openai
 
 openshell sandbox create \
   --name ollama-client \
+  --from registry.example.com/team/python-agent:1.0 \
   --provider ollama \
   --env OPENAI_BASE_URL=http://host.openshell.internal:11434/v1 \
   -- python app.py
@@ -212,8 +218,9 @@ If the request is denied:
 OpenShell removed the workspace-global managed inference route and the
 `openshell inference` commands. Upgrades remove stored route records. Provider
 records, provider refresh configuration, and existing sandbox attachments are
-preserved. Built-in profiles remain available during the transition, but new
-setups should import an explicit profile under a new ID.
+preserved. Import the profile each preserved provider refers to before the first
+sandbox creation after the upgrade, and give new setups an explicit profile under
+their own ID.
 
 The old route cannot be converted automatically. It applied one provider and
 model to every sandbox in a workspace, while provider attachments intentionally
@@ -232,8 +239,8 @@ openshell inference set \
   --timeout 300
 ```
 
-Clients called `https://inference.local`, supplied a placeholder key and model,
-and relied on OpenShell to rewrite the request.
+Clients called a managed virtual endpoint, supplied a placeholder key and
+model, and relied on OpenShell to rewrite the request.
 
 ### After
 
@@ -253,9 +260,9 @@ openshell sandbox provider attach inference-demo nvidia-native-prod
 ```
 
 OpenShell does not export stored credential values or change a provider's
-profile type in place. If the original credential source is unavailable, the
-compatibility built-in lets you attach the preserved provider while you arrange
-credential rotation into the replacement provider.
+profile type in place. If the original credential source is unavailable, import
+the original profile at its own ID so the preserved provider keeps resolving
+while you arrange credential rotation into the replacement provider.
 
 Update each workload to:
 
@@ -266,9 +273,9 @@ Update each workload to:
 5. Use the provider's native request format.
 
 Launch a new process after attachment and verify a native request before
-upgrading production workloads. Code that still calls `inference.local` fails
-DNS resolution because OpenShell no longer resolves or trusts that virtual
-host.
+upgrading production workloads. Code that still calls the retired managed
+virtual endpoint fails DNS resolution because OpenShell no longer resolves or
+trusts that host.
 
 ### Migration Checklist
 
@@ -290,7 +297,7 @@ Special cases require additional work:
 - Host-local services need `host.openshell.internal` or a reachable LAN/service
   hostname, not `127.0.0.1` or `localhost`.
 - Google Vertex AI clients must use the native Vertex endpoint and
-  authentication behavior. See [Google Vertex AI](/providers/google-vertex-ai).
+  authentication behavior. See [Google](/providers/google-cloud#vertex-ai).
 - A bridge-fronted AWS Bedrock deployment needs a custom profile that declares
   the bridge endpoint and allowed client binaries.
 
@@ -308,4 +315,4 @@ headers, model selection, request shape, streaming, and timeout behavior.
 - [Profiles](/providers/profiles)
 - [Providers](/sandboxes/manage-providers)
 - [Customize Sandbox Policies](/sandboxes/policies)
-- [Google Vertex AI](/providers/google-vertex-ai)
+- [Google](/providers/google-cloud#vertex-ai)

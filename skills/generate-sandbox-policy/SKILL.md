@@ -83,7 +83,7 @@ Regardless of tier, extract (or infer) these from the user's description:
 | **Paths** | Specific URL paths or patterns | Only for custom/fine-grained |
 | **Enforcement** | `enforce` or `audit`? Default to `enforce`. | No — has a default |
 | **Binary** | Which binary/process should have access | Yes — ask if not stated |
-| **Middleware** | Whether admitted HTTP requests or client WebSocket text messages need an ordered built-in or operator-run processing stage | No |
+| **Middleware** | Whether admitted HTTP requests, final HTTP responses, or client WebSocket text messages need an ordered built-in or operator-run processing stage | No |
 
 If the host and access level are clear but binaries are not specified, ask the user which binary or process will be making the requests. Suggest common defaults like `/usr/bin/curl`, `/usr/local/bin/claude`, etc.
 
@@ -171,7 +171,13 @@ Key sections to reference:
 
 When middleware is requested, also read the published [supervisor middleware guide](https://docs.nvidia.com/openshell/latest/extensibility/supervisor-middleware.md).
 
-For enforcement concepts and the shipped baseline, read [sandbox policies](https://docs.nvidia.com/openshell/latest/sandboxes/policies.md) and the [default policy reference](https://docs.nvidia.com/openshell/latest/reference/default-policy.md). The default policy is baked into the community base image (`ghcr.io/nvidia/openshell-community/sandboxes/base:latest`).
+For enforcement concepts and the shipped baseline, read [sandbox policies](https://docs.nvidia.com/openshell/latest/sandboxes/policies.md) and the [default policy reference](https://docs.nvidia.com/openshell/latest/reference/default-policy.md). The default policy is built into the OpenShell runtime and applies when no explicit policy is supplied.
+
+Validate the intended provider combination as well as the authored policy.
+An image endpoint can become credentialed after provider composition and block
+startup with `ConfigurationInvalid`. Repair the complete policy or provider
+selection using the published policy workflow; do not add
+`allow_uninspected_credentials` merely to bypass a startup error.
 
 ## Step 4: Choose Policy Shape
 
@@ -199,24 +205,19 @@ Is L7 inspection needed?
 
 ### TLS Decision
 
-| API host port | TLS setting |
-|--------------|-------------|
-| Port 443 (HTTPS) and L7 rules/preset needed | `tls: terminate` (required for inspection) |
-| Port 443 (HTTPS) and L4-only | Omit `tls` (passthrough, no L7); choose omitted protocol or explicit TCP based on client/runtime as above |
-| Non-443 (HTTP) | Omit `tls` |
+Omit `tls` on every endpoint, regardless of port: the proxy auto-detects TLS and terminates it for inspection. `skip` is the only accepted non-empty value, reserved for upstreams requiring client-certificate mTLS or a non-HTTP protocol.
 
-**Critical**: `protocol: rest` on port 443 without `tls: terminate` will not work — the proxy cannot inspect encrypted traffic. Always set `tls: terminate` when combining port 443 with L7 rules.
+Do not "fix" a rejected value — including the removed `terminate` and `passthrough` spellings — by changing it to `skip`; remove the field instead. `skip` stops inspection, credential injection, and L7 rule enforcement for that endpoint, so it silently widens what the endpoint allows.
 
 ### Middleware Decision
 
-Add `network_middlewares` only when the user asks to inspect, transform, redact, or independently authorize admitted HTTP requests or client WebSocket text messages. Middleware runs after network and L7 policy admission and before provider credential injection.
+Add `network_middlewares` only when the user asks to inspect, transform, redact, or independently authorize admitted HTTP requests, final HTTP responses, or client WebSocket text messages. Request middleware runs after network and L7 policy admission and before provider credential injection. Response middleware runs on the matching final response before it returns to the sandbox.
 
 - Use `openshell/regex` without gateway registration for fixed-pattern redaction of UTF-8 HTTP request bodies or complete client-to-upstream WebSocket text messages.
 - Use an operator-owned middleware name only when it is already registered under `[[openshell.supervisor.middleware]]` and reachable from both the gateway and sandbox supervisors.
-- Confirm that a requested WebSocket implementation exposes a `WEBSOCKET_MESSAGE/PRE_CREDENTIALS` binding. `openshell/regex` exposes this binding. A host-matched HTTP-only implementation may inspect the upgrade GET but does not join the post-upgrade chain; messages pass and OpenShell emits `binding_not_selected` coverage regardless of `on_error`.
-- WebSocket middleware runs for both `ws://` and `wss://` and receives complete client text messages only. Binary messages pass under both error modes and emit `unsupported_message_type` coverage for active stages. Upstream-to-client messages remain uninspected. Do not claim that V1 provides all-message WebSocket inspection.
-- Treat `fail_open` on WebSocket as a session-scoped bypass: if the stage stream fails, OpenShell disables it for later messages on that connection and emits a state-change finding. Prefer `fail_closed` for required redaction or authorization.
-- `on_error` governs failures after an advertised operation binding is selected. It does not apply to an unadvertised WebSocket binding or binary-message pass-through. An explicit HTTP, WebSocket preflight, or WebSocket message denial is authoritative under both `fail_open` and `fail_closed`.
+- Confirm that the implementation advertises the requested binding: `HTTP_REQUEST/PRE_CREDENTIALS`, `HTTP_RESPONSE/PRE_RETURN`, or `WEBSOCKET_MESSAGE/PRE_CREDENTIALS`. A host match alone does not enable inspection.
+- WebSocket middleware inspects client text messages only, over both `ws://` and `wss://`. Binary and upstream-to-client messages pass without inspection, even with `fail_closed`.
+- `on_error` controls selected-stage failures. Explicit denials always block traffic. A failed WebSocket stage with `fail_open` can remain bypassed for the rest of the connection.
 - Default `on_error` to `fail_closed`. Use `fail_open` only when bypassing the stage preserves the user's stated security requirement.
 - Assign unique `order` values across the complete policy. Lower values run first, and at most 10 configs may be selected.
 - Match the narrowest destination hosts possible with `endpoints.include`; use `exclude` when a broad selector has trusted exceptions.
@@ -269,7 +270,6 @@ network_policies:
       - host: <api_host>
         port: <port>
         protocol: rest          # Required for L7 inspection
-        tls: terminate          # Required for HTTPS + L7
         enforcement: enforce    # or audit
         # Use ONE of: access OR rules (never both)
         access: <preset>        # read-only | read-write | full
@@ -373,18 +373,19 @@ Before presenting the policy to the user, verify correctness **and** flag breadt
       `protocol: tcp` is L4-only and must not contain either field
 - [ ] Every `protocol: tcp` endpoint has a valid DNS hostname; it is not
       hostless, an IP literal, a trailing-dot name, or a malformed DNS selector
-- [ ] If `tls: terminate` is set, `protocol` is also set
+- [ ] `tls` is either omitted or set to `skip`; no other value is accepted
 - [ ] `rules` list is not empty when present
 - [ ] If `protocol: sql`, `enforcement` is not `enforce`
 - [ ] Every middleware config has a non-empty `middleware` name and non-empty `endpoints.include`
 - [ ] Middleware `order` values are unique and no selected chain exceeds 10 stages
 - [ ] No fail-closed middleware selector can cover a `tls: skip` endpoint
 - [ ] Any required WebSocket control advertises `WEBSOCKET_MESSAGE/PRE_CREDENTIALS`, and the user understands that V1 does not inspect binary messages
+- [ ] Any required response control advertises `HTTP_RESPONSE/PRE_RETURN`
 - [ ] Endpoints contributed by a credentialed provider are not L4-only or `tls: skip` unless `allow_uninspected_credentials: true` explicitly records the exception
 
 ### Schema Warnings (log-only, but should be fixed)
 
-- [ ] `protocol: rest` on port 443 should have `tls: terminate`
+- [ ] `tls: skip` is not combined with L7 rules on port 443; inspection cannot work on encrypted traffic
 - [ ] HTTP methods are standard: GET, HEAD, POST, PUT, DELETE, PATCH, OPTIONS, or `*`
 - [ ] Credentialed destinations are also covered by the attached provider
       profile endpoint; policy admission alone does not authorize credential
@@ -551,7 +552,6 @@ my_api_readonly:
     - host: api.example.com
       port: 443
       protocol: rest
-      tls: terminate
       enforcement: enforce
       access: read-only
   binaries:
@@ -567,7 +567,6 @@ my_api_custom:
     - host: api.example.com
       port: 443
       protocol: rest
-      tls: terminate
       enforcement: enforce
       rules:
         - allow:
@@ -636,5 +635,5 @@ private_services:
 - [Sandbox policies](https://docs.nvidia.com/openshell/latest/sandboxes/policies.md)
 - [Default policy](https://docs.nvidia.com/openshell/latest/reference/default-policy.md)
 - [Supervisor middleware](https://docs.nvidia.com/openshell/latest/extensibility/supervisor-middleware.md)
-- Default policy: baked into the community base image (`ghcr.io/nvidia/openshell-community/sandboxes/base:latest`)
+- Default policy: built into the OpenShell runtime
 - For translation examples from real API docs, see [examples.md](examples.md)

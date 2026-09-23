@@ -8,13 +8,12 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing::info;
 
+use openshell_core::VERSION;
 use openshell_core::proto::compute::v1::compute_driver_server::ComputeDriverServer;
-use openshell_core::{ImagePullPolicy, VERSION};
 use openshell_driver_kubernetes::{
-    AppArmorProfile, ComputeDriverService, DEFAULT_GATEWAY_ID, DEFAULT_PROXY_UID,
-    DEFAULT_SANDBOX_SERVICE_ACCOUNT_NAME, KubernetesComputeConfig, KubernetesComputeDriver,
-    KubernetesSidecarConfig, ManagedSshIngressConfig, SupervisorSideloadMethod, SupervisorTopology,
-    WorkspaceMode,
+    ComputeDriverService, DEFAULT_GATEWAY_ID, DEFAULT_SANDBOX_SERVICE_ACCOUNT_NAME,
+    KubernetesComputeConfig, KubernetesComputeDriver, KubernetesImagePullPolicy,
+    KubernetesSandboxRuntimeConfig, ManagedSshIngressConfig, WorkspaceMode,
 };
 
 #[derive(Parser, Debug)]
@@ -22,6 +21,13 @@ use openshell_driver_kubernetes::{
 #[command(version = VERSION)]
 #[allow(clippy::struct_excessive_bools)]
 struct Args {
+    /// Operator-owned JSON policy; omitted means driver config disabled and labels required.
+    #[arg(
+        long,
+        env = "OPENSHELL_DRIVER_ADMISSION_CONFIG_JSON",
+        default_value = "{}"
+    )]
+    admission_config_json: openshell_core::resource_admission::DriverAdmissionConfig,
     /// Public compute-driver Unix socket used by an external gateway.
     #[arg(long, env = "OPENSHELL_COMPUTE_DRIVER_SOCKET")]
     bind_socket: Option<PathBuf>,
@@ -72,7 +78,7 @@ struct Args {
     sandbox_image: Option<String>,
 
     #[arg(long, env = "OPENSHELL_SANDBOX_IMAGE_PULL_POLICY")]
-    sandbox_image_pull_policy: Option<ImagePullPolicy>,
+    sandbox_image_pull_policy: Option<KubernetesImagePullPolicy>,
 
     #[arg(
         long,
@@ -94,10 +100,8 @@ struct Args {
     )]
     managed_ssh_gateway_pod_selector: Vec<String>,
 
-    /// Gateway callback endpoint reachable from sandbox pods. Kubernetes
-    /// service topology cannot be inferred from the sandbox namespace.
     #[arg(long, env = "OPENSHELL_GRPC_ENDPOINT")]
-    grpc_endpoint: String,
+    grpc_endpoint: Option<String>,
 
     #[arg(
         long,
@@ -112,37 +116,31 @@ struct Args {
     #[arg(long, env = "OPENSHELL_HOST_GATEWAY_IP")]
     host_gateway_ip: Option<String>,
 
+    #[arg(long, env = "OPENSHELL_SANDBOX_RUNTIME_IMAGE")]
+    sandbox_runtime_image: Option<String>,
+
+    #[arg(long, env = "OPENSHELL_SANDBOX_RUNTIME_IMAGE_PULL_POLICY")]
+    sandbox_runtime_image_pull_policy: Option<KubernetesImagePullPolicy>,
+
     #[arg(long, env = "OPENSHELL_SUPERVISOR_IMAGE")]
     supervisor_image: Option<String>,
 
     #[arg(long, env = "OPENSHELL_SUPERVISOR_IMAGE_PULL_POLICY")]
-    supervisor_image_pull_policy: Option<ImagePullPolicy>,
+    supervisor_image_pull_policy: Option<KubernetesImagePullPolicy>,
 
     #[arg(
         long,
-        env = "OPENSHELL_SUPERVISOR_SIDELOAD_METHOD",
-        default_value = "image-volume"
+        env = "OPENSHELL_K8S_SANDBOX_RUNTIME_NETWORK_POLICY_ENFORCED",
+        default_value_t = false
     )]
-    supervisor_sideload_method: SupervisorSideloadMethod,
-
-    #[arg(long, env = "OPENSHELL_K8S_TOPOLOGY", default_value = "combined")]
-    topology: SupervisorTopology,
+    sandbox_runtime_network_policy_enforced: bool,
 
     #[arg(
-        long = "sidecar-proxy-uid",
-        alias = "proxy-uid",
-        env = "OPENSHELL_K8S_SIDECAR_PROXY_UID",
-        default_value_t = DEFAULT_PROXY_UID
+        long,
+        env = "OPENSHELL_K8S_SANDBOX_RUNTIME_BOUNDARY_PORT",
+        default_value_t = 5500
     )]
-    sidecar_proxy_uid: u32,
-
-    #[arg(
-        long = "sidecar-process-binary-aware-network-policy",
-        env = "OPENSHELL_K8S_SIDECAR_PROCESS_BINARY_AWARE_NETWORK_POLICY",
-        default_value_t = true,
-        action = ArgAction::Set
-    )]
-    sidecar_process_binary_aware_network_policy: bool,
+    sandbox_runtime_boundary_port: u16,
 
     /// Corporate HTTP forward proxy for policy-approved TLS CONNECT egress.
     #[arg(long, env = "OPENSHELL_UPSTREAM_PROXY")]
@@ -168,11 +166,15 @@ struct Args {
     #[arg(long, env = "OPENSHELL_UPSTREAM_PROXY_CONNECT_BY_HOSTNAME", action = ArgAction::SetTrue)]
     proxy_connect_by_hostname: bool,
 
+    /// Path to a PEM CA bundle trusted for the corporate proxy. Required for
+    /// an `https://` proxy with a private CA, and for a TLS-intercepting proxy
+    /// that re-signs upstream certificates. Read by this process and staged
+    /// into each sandbox's supervisor bootstrap Secret.
+    #[arg(long, env = "OPENSHELL_UPSTREAM_PROXY_CA_BUNDLE")]
+    proxy_ca_bundle: Option<String>,
+
     #[arg(long, env = "OPENSHELL_ENABLE_USER_NAMESPACES")]
     enable_user_namespaces: bool,
-
-    #[arg(long, env = "OPENSHELL_K8S_APP_ARMOR_PROFILE")]
-    app_armor_profile: Option<AppArmorProfile>,
 
     /// Lifetime (seconds) of the projected `ServiceAccount` token
     /// kubelet writes into each sandbox pod for the `IssueSandboxToken`
@@ -243,6 +245,8 @@ async fn main() -> Result<()> {
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let driver = KubernetesComputeDriver::new(
         KubernetesComputeConfig {
+            allow_driver_config: args.admission_config_json.allow_driver_config,
+            resource_admission: args.admission_config_json.resource_admission.clone(),
             workspace_mode: args.workspace_mode,
             gateway_id: args.gateway_id,
             namespace: args.sandbox_namespace,
@@ -257,16 +261,17 @@ async fn main() -> Result<()> {
                 gateway_namespace: args.managed_ssh_gateway_namespace.unwrap_or_default(),
                 gateway_pod_selector: managed_ssh_gateway_pod_selector,
             },
+            sandbox_runtime_image: args
+                .sandbox_runtime_image
+                .unwrap_or_else(openshell_core::config::default_sandbox_runtime_image),
+            sandbox_runtime_image_pull_policy: args.sandbox_runtime_image_pull_policy,
             supervisor_image: args
                 .supervisor_image
                 .unwrap_or_else(openshell_core::config::default_supervisor_image),
             supervisor_image_pull_policy: args.supervisor_image_pull_policy,
-            supervisor_sideload_method: args.supervisor_sideload_method,
-            topology: args.topology,
-            sidecar: KubernetesSidecarConfig {
-                proxy_uid: args.sidecar_proxy_uid,
-                process_binary_aware_network_policy: args
-                    .sidecar_process_binary_aware_network_policy,
+            sandbox_runtime: KubernetesSandboxRuntimeConfig {
+                network_policy_enforced: args.sandbox_runtime_network_policy_enforced,
+                boundary_port: args.sandbox_runtime_boundary_port,
             },
             https_proxy: args.https_proxy,
             no_proxy: args.no_proxy,
@@ -274,12 +279,12 @@ async fn main() -> Result<()> {
             proxy_auth_secret_key: args.proxy_auth_secret_key,
             proxy_auth_allow_insecure: args.proxy_auth_allow_insecure.then_some(true),
             proxy_connect_by_hostname: args.proxy_connect_by_hostname.then_some(true),
-            grpc_endpoint: args.grpc_endpoint,
+            proxy_ca_bundle: args.proxy_ca_bundle,
+            grpc_endpoint: args.grpc_endpoint.unwrap_or_default(),
             ssh_socket_path: args.sandbox_ssh_socket_path,
             client_tls_secret_name: args.client_tls_secret_name.unwrap_or_default(),
             host_gateway_ip: args.host_gateway_ip.unwrap_or_default(),
             enable_user_namespaces: args.enable_user_namespaces,
-            app_armor_profile: args.app_armor_profile,
             workspace_default_storage_size: std::env::var(
                 "OPENSHELL_K8S_WORKSPACE_DEFAULT_STORAGE_SIZE",
             )
@@ -338,13 +343,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn requires_explicit_gateway_callback_endpoint() {
-        let error = Args::try_parse_from(["openshell-driver-kubernetes"])
-            .expect_err("Kubernetes service topology must be explicit");
-        assert!(error.to_string().contains("--grpc-endpoint"));
-    }
-
-    #[test]
     fn accepts_gateway_otlp_configuration() {
         let args = Args::try_parse_from([
             "openshell-driver-kubernetes",
@@ -352,8 +350,6 @@ mod tests {
             "http://collector.example:4317",
             "--gateway-name",
             "kubernetes-dev",
-            "--grpc-endpoint",
-            "http://openshell.example:8080",
         ])
         .expect("OTLP endpoint should parse");
 

@@ -49,6 +49,10 @@ domain sockets. Their libraries remain in the gateway dependency graph, so the
 gateway's credential-driver configuration and in-process behavior still compile
 on Windows.
 
+The standalone sandbox and supervisor runtimes are Unix-only and are excluded
+as top-level Windows workspace targets. The MXC driver links only the
+cross-platform supervisor network library needed by its host egress proxy.
+
 | Driver | Windows build behavior | Runtime behavior |
 |---|---|---|
 | Docker | Driver crate excluded; gateway registration stub retained. | Gateway construction returns unsupported. |
@@ -65,16 +69,18 @@ creating misleading Windows driver artifacts.
 The GitHub Actions workflow runs Clippy for the Windows-supported workspace and
 e2e crates plus Rust tests for pull-request mirror branches labeled `test:windows`.
 Merge queues do not run this workflow. On
-pushes to `main`, a cache-seed job runs the same lint and test commands before a
-dependent job builds the release binaries. Manual dispatches exercise the same
+pushes to `windows`, a cache-seed job runs the same lint and test commands before a
+dependent job builds the release binaries. Manual dispatches on `windows` exercise the same
 seed-then-build path. The binaries remain CI validation artifacts and are not
 uploaded or published.
 
 Each job restores and saves a dedicated Rust cache containing the Cargo
 registry and dependency build artifacts, including artifacts from failed runs.
 The seed job and pull-request job use the same Cargo target and sccache
-namespaces. The release build waits for the seed job, then restores its newly
-warmed cache rather than compiling concurrently from a cold cache.
+namespaces, but GitHub scopes caches by branch. Pull-request mirror branches
+cannot restore the `windows` branch cache. The release build waits for the seed
+job, then restores its newly warmed cache rather than compiling concurrently
+from a cold cache.
 
 Windows validation is exposed through `tasks/windows.toml`:
 
@@ -108,15 +114,24 @@ async functions caused by cfg-gated Windows stubs. Repository-wide pre-commit
 skips only Linux-specific installer, build-environment shell-helper, and
 packaging-asset tests; its
 cross-platform Python, Markdown, license, and documentation checks still run.
+Tracked Cargo lockfiles are checked natively through PowerShell. Deterministic
+gateway parity uses Git for Windows Bash with temporary, checkout-scoped Python
+launchers. The TypeScript SDK uses Windows protobuf plugin paths and x64 Biome
+under emulation on ARM64, while its test binding follows Node's architecture
+and the locked Rolldown version. Go tests retain race coverage wherever the
+toolchain supports it; POSIX permission-bit checks are not Windows ACL tests.
 Test tasks require the Rust target architecture to match the Windows host, so
 an ARM64 test result is native coverage rather than x64 emulation coverage.
-By default it enables bundled Z3 for reproducible Windows builds. `z3-sys`
-builds Z3 from source and links it into the release binaries, so copying
-`openshell-gateway.exe` and `openshell.exe` does not create an undeclared
-`libz3.dll` runtime dependency. When `Z3_LIBRARY_PATH_OVERRIDE` points at a
-directory containing `libz3.lib`, the wrapper uses that system Z3 instead and
-requires `Z3_SYS_Z3_HEADER` to point at the full path to `z3.h`. Binaries built
-against a dynamic system Z3 must be deployed with the matching `libz3.dll`.
+By default it enables the `z3-sys` prebuilt-release feature and pins Z3 5.1.0.
+On a clean target directory, `z3-sys` downloads the official static library for
+the selected Windows architecture instead of compiling Z3 through
+CMake/MSBuild. GitHub Actions supplies its read-only workflow token for the
+release lookup, and the Cargo target cache preserves the extracted library for
+subsequent runs. When
+`Z3_LIBRARY_PATH_OVERRIDE` points at a directory containing `libz3.lib`, the
+wrapper uses that system Z3 instead and requires `Z3_SYS_Z3_HEADER` to point at
+the full path to `z3.h`. Local clean builds use the unauthenticated GitHub API
+unless `READ_ONLY_GITHUB_TOKEN` is set.
 
 GitHub Actions layers the Cargo target cache with sccache's GitHub Actions
 backend. The target cache lets Cargo skip intact dependency builds; sccache
@@ -136,10 +151,10 @@ Spectre-mitigated libraries, host-native Clang tools, CMake tools, and an
 ARM64-capable Windows SDK. Clang provides `libclang.dll` for `bindgen` and
 `clang-cl.exe` for ARM64 crypto dependencies. During x64-to-ARM64 check/build,
 the wrapper discovers and adds the Visual Studio-bundled Ninja to `PATH` for
-native dependencies. Bundled Z3 uses native MSVC `cl.exe` with the Visual
-Studio generator, while the crypto crates select `clang-cl`. Artifact hashing
-uses .NET SHA256 directly because module autoloading in the mise-launched
-Windows PowerShell process is not guaranteed.
+native dependencies. Z3 uses the official prebuilt ARM64 static library, so it
+does not inherit compiler settings from those native dependencies. Artifact
+hashing uses .NET SHA256 directly because module autoloading in the
+mise-launched Windows PowerShell process is not guaranteed.
 
 The wrapper defaults Cargo compilation to four jobs. Set
 `OPENSHELL_WINDOWS_BUILD_JOBS` to a positive integer to override that limit.
@@ -160,9 +175,9 @@ mise run --skip-tools windows:lint:<x64|arm64>
 mise run --skip-tools windows:test:<x64|arm64>
 ```
 
-Pushes to `main` and manual dispatches first seed the shared caches with those
+Pushes to `windows` and manual dispatches on that branch first seed the shared caches with those
 same lint and test commands. Both seed and build jobs use job-level
-`continue-on-error: true`, so Windows job failures do not fail the main/manual
+`continue-on-error: true`, so Windows job failures do not fail the release-branch
 workflow. Opt-in PR jobs still report failures normally. After the seed job
 finishes, a separate job executes:
 
