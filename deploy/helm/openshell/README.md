@@ -261,8 +261,8 @@ discovery endpoint or its TLS CA.
 | resources | object | `{}` | Gateway pod resource requests and limits. |
 | sandbox.image.digest | string | `""` | Sandbox image digest. When set, this takes precedence over tag. |
 | sandbox.image.pullPolicy | string | `nil` | Sandbox image pull policy. Leave unset to use the Kubernetes image default. |
-| sandbox.image.repository | string | `"ghcr.io/nvidia/openshell-community/sandboxes/base"` | Default standalone sandbox image repository. |
-| sandbox.image.tag | string | `"latest"` | Sandbox image tag. Defaults to latest when empty. |
+| sandbox.image.repository | string | `"nvcr.io/nvidia/base/ubuntu"` | Default standalone sandbox image repository. |
+| sandbox.image.tag | string | `"24.04"` | Sandbox image tag. Defaults to latest when empty. |
 | sandboxRuntime.image.digest | string | `""` | Sandbox runtime image digest. When set, this takes precedence over tag. |
 | sandboxRuntime.image.pullPolicy | string | `nil` | Sandbox runtime image pull policy. Empty uses global.image.pullPolicy. |
 | sandboxRuntime.image.registry | string | `""` | Sandbox runtime image registry. Empty uses global.image.registry. |

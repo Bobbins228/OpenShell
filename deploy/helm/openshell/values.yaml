@@ -78,9 +78,9 @@ supervisor:
 sandbox:
   image:
     # -- Default standalone sandbox image repository.
-    repository: ghcr.io/nvidia/openshell-community/sandboxes/base
+    repository: nvcr.io/nvidia/base/ubuntu
     # -- Sandbox image tag. Defaults to latest when empty.
-    tag: latest
+    tag: "24.04"
     # -- Sandbox image digest. When set, this takes precedence over tag.
     digest: ""
     # -- Sandbox image pull policy. Leave unset to use the Kubernetes image default.

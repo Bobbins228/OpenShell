@@ -143,6 +143,7 @@ tests:
     template: templates/gateway-config.yaml
     set:
       sandbox.image.repository: registry.example/sandbox
+      sandbox.image.tag: ""
     asserts:
       - matchRegex:
           path: data["gateway.toml"]

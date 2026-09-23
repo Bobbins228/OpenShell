@@ -38,8 +38,8 @@ spec:
         tag: latest
     sandbox:
       image:
-        repository: ghcr.io/nvidia/openshell-community/sandboxes/base
-        tag: latest
+        repository: nvcr.io/nvidia/base/ubuntu
+        tag: "24.04"
         pullPolicy: __SANDBOX_IMAGE_PULL_POLICY__
     server:
       dbUrl: __DB_URL__
