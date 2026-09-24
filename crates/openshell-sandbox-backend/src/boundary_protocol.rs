@@ -24,8 +24,8 @@ use openshell_isolation_interface::AgentSpec;
 use openshell_isolation_interface::contract::Sha256Digest;
 use openshell_isolation_interface::contract::{
     BackendDescriptor, BackendError, BinaryIdentity, BoundaryConfirmation, BoundaryExitStatus,
-    BoundaryProperties, BoundarySignal, EnforcedProperty, ExecSpec, OuterFenceGuarantees,
-    ResolveError, ShellSpec,
+    BoundaryProperties, BoundarySignal, EnforcedProperty, ExecSpec, ExecutableIdentity,
+    OuterFenceGuarantees, ResolveError, ShellSpec,
 };
 use rcgen::{CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair, KeyUsagePurpose};
 use serde::de::DeserializeOwned;
@@ -42,6 +42,20 @@ pub const STREAM_STDIN_CLOSED: u8 = 4;
 /// Supervisor decision for a staged seccomp-mediated TCP open.
 pub const STREAM_NETWORK_DECISION: u8 = 5;
 pub const MAX_STREAM_FRAME_BYTES: usize = 64 * 1024;
+
+// Every relay, exec, and control exchange shares one HTTP/2 connection. The
+// connection window must exceed what all streams can hold unread, otherwise
+// stalled relays starve DNS and control traffic of connection-level credit.
+// h2 keeps at least two thirds of `connection - in-flight` advertised, so the
+// reserve stays usable even with every stream stalled at its window.
+pub const BOUNDARY_MAX_CONCURRENT_STREAMS: u32 = 128;
+pub const BOUNDARY_STREAM_WINDOW_BYTES: u32 = 256 * 1024;
+pub const BOUNDARY_CONNECTION_WINDOW_RESERVE_BYTES: u32 = 16 * 1024 * 1024;
+pub const BOUNDARY_CONNECTION_WINDOW_BYTES: u32 = BOUNDARY_MAX_CONCURRENT_STREAMS
+    * BOUNDARY_STREAM_WINDOW_BYTES
+    + BOUNDARY_CONNECTION_WINDOW_RESERVE_BYTES;
+// HTTP/2 caps any flow-control window at 2^31 - 1.
+const _: () = assert!(BOUNDARY_CONNECTION_WINDOW_BYTES <= i32::MAX as u32);
 
 /// Capability masks measured from `/proc/<pid>/status` by the `OpenShell`
 /// co-located runtime.
@@ -955,12 +969,36 @@ pub enum BoundaryErrorKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutableIdentityWire {
+    pub path: PathBuf,
+    pub digest: Option<Sha256Digest>,
+}
+
+impl From<ExecutableIdentity> for ExecutableIdentityWire {
+    fn from(identity: ExecutableIdentity) -> Self {
+        Self {
+            path: identity.path,
+            digest: identity.digest,
+        }
+    }
+}
+
+impl From<ExecutableIdentityWire> for ExecutableIdentity {
+    fn from(identity: ExecutableIdentityWire) -> Self {
+        Self {
+            path: identity.path,
+            digest: identity.digest,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BinaryIdentityWire {
     Resolved {
-        binary_path: PathBuf,
-        binary_digest: Option<Sha256Digest>,
-        ancestors: Vec<PathBuf>,
+        executable: ExecutableIdentityWire,
+        ancestors: Vec<ExecutableIdentityWire>,
         cmdline_paths: Vec<PathBuf>,
     },
     Failed {
@@ -972,9 +1010,8 @@ impl From<Result<BinaryIdentity, ResolveError>> for BinaryIdentityWire {
     fn from(identity: Result<BinaryIdentity, ResolveError>) -> Self {
         match identity {
             Ok(identity) => Self::Resolved {
-                binary_path: identity.binary_path,
-                binary_digest: identity.binary_digest,
-                ancestors: identity.ancestors,
+                executable: identity.executable.into(),
+                ancestors: identity.ancestors.into_iter().map(Into::into).collect(),
                 cmdline_paths: identity.cmdline_paths,
             },
             Err(error) => Self::Failed {
@@ -988,14 +1025,12 @@ impl BinaryIdentityWire {
     pub fn into_result(self) -> Result<BinaryIdentity, ResolveError> {
         match self {
             Self::Resolved {
-                binary_path,
-                binary_digest,
+                executable,
                 ancestors,
                 cmdline_paths,
             } => Ok(BinaryIdentity {
-                binary_path,
-                binary_digest,
-                ancestors,
+                executable: executable.into(),
+                ancestors: ancestors.into_iter().map(Into::into).collect(),
                 cmdline_paths,
             }),
             Self::Failed { message } => Err(ResolveError::Failed(message)),
@@ -1460,15 +1495,21 @@ mod tests {
     fn binary_identity_wire_rejects_ambiguous_or_invalid_shapes() {
         for encoded in [
             r#"{"result":"resolved","ancestors":[],"cmdline_paths":[]}"#,
-            r#"{"result":"resolved","binary_path":"/bin/tool","binary_digest":"invalid","ancestors":[],"cmdline_paths":[]}"#,
+            r#"{"result":"resolved","executable":{"path":"/bin/tool","digest":"invalid"},"ancestors":[],"cmdline_paths":[]}"#,
+            r#"{"result":"resolved","binary_path":"/bin/tool","binary_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","ancestors":[],"cmdline_paths":[]}"#,
             r#"{"result":"failed","message":"unavailable","binary_path":"/bin/tool"}"#,
         ] {
             assert!(serde_json::from_str::<BinaryIdentityWire>(encoded).is_err());
         }
         let identity = BinaryIdentityWire::from(Ok(BinaryIdentity {
-            binary_path: PathBuf::from("/bin/tool"),
-            binary_digest: Some("a".repeat(64).parse().unwrap()),
-            ancestors: Vec::new(),
+            executable: ExecutableIdentity {
+                path: PathBuf::from("/bin/tool"),
+                digest: Some("a".repeat(64).parse().unwrap()),
+            },
+            ancestors: vec![ExecutableIdentity {
+                path: PathBuf::from("/bin/launcher"),
+                digest: Some("b".repeat(64).parse().unwrap()),
+            }],
             cmdline_paths: Vec::new(),
         }));
         let encoded = serde_json::to_vec(&identity).unwrap();
