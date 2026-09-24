@@ -358,8 +358,12 @@ can recover that same successor for 30 seconds when the request matches, but it
 cannot authorize ordinary RPCs or choose another successor. Advancing the
 successor removes that retry path across every gateway replica. Short
 `gateway_jwt.ttl_secs` lifetimes still bound the exposure of a current bearer
-that has not yet been refreshed. Omitting `gateway_jwt.ttl_secs` uses a
-900-second lifetime. Explicit zero is rejected.
+that has not yet been refreshed. Omitting `gateway_jwt.ttl_secs` selects
+non-expiring launch-scoped gateway and Sandbox Protocol tokens for local
+single-player Docker, Podman, and VM gateways; both token profiles carry
+`exp = 0`. Typed extension JWTs retain a 900-second default when the field is
+omitted. Kubernetes and other shared deployments should set a positive TTL.
+Explicit zero is rejected.
 
 Gateway JWT signing-key rotation is currently an offline operator action. The
 runtime loads one active signing key and one matching public verification key
@@ -741,11 +745,28 @@ Gateway and Sandbox Protocol token responses follow the same convention: a
 present expiration timestamp carries the absolute deadline, while absence means
 the issued token does not expire.
 
+On-disk SQLite databases run in WAL journal mode with `synchronous=FULL`.
+The adapter switches the file to WAL on a single connection before the pool
+opens, then applies both settings to every pooled connection. WAL lets readers
+proceed while a writer commits and reduces each commit to one WAL `fsync`,
+which matters because gateway hot paths such as SSH session issuance and
+revocation are many small autocommit writes. `synchronous` stays at `FULL`
+because some of those writes tighten authorization: under `NORMAL`, a power
+loss could roll back an acknowledged SSH session revocation and make the token
+valid again. Writes that are safe to lose, currently only SSH session issuance
+through `Store::create_relaxed`, use a second single-connection pool with
+`synchronous=NORMAL`. Losing a minted token only invalidates it, and because
+both pools share one WAL, the next `FULL` commit also makes earlier relaxed
+commits durable. Deployments that need multiple replicas use Postgres, where
+`create_relaxed` is an ordinary durable insert. WAL requires a local filesystem with working shared
+memory, so the SQLite file must not live on a network mount, and backups must
+use `sqlite3 .backup` or `VACUUM INTO` rather than copying the main file alone.
+
 The SQLite adapter tightens the on-disk database file to mode `0o600` on every
 connect so that provider API keys, SSH session tokens, and sandbox metadata are
 not readable by other local users on shared hosts. The same restriction is
-reapplied to the `<db>-wal` and `<db>-shm` sidecars (created by SQLite's
-default WAL journal mode), which mirror the same sensitive contents.
+reapplied to the `<db>-wal` and `<db>-shm` sidecars that WAL mode creates,
+which mirror the same sensitive contents.
 
 Persisted state includes sandboxes, providers, provider profiles, provider
 credential refresh state, SSH sessions, policy revisions, settings, deployment

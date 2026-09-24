@@ -105,10 +105,10 @@ assert_contains "$snap_wrapper" "config preflight -- --config \"\$CANONICAL_CONF
 assert_not_contains "$snap_wrapper" "[ -f \"\$CANONICAL_CONFIG_FILE\" ]"
 bash "$ROOT/tasks/scripts/test-snap-gateway-wrapper.sh" "$snap_wrapper"
 
-# Store installs autoconnect all required interfaces. Assertionless local Snap
-# tests connect only the privileged plugs, with Docker using the system slot.
-# Manual connection to the system Docker slot requires snapd 2.77.
-assert_contains "$snapcraft" "assumes: [snapd2.77]"
+# Store installs autoconnect all required interfaces and require snapd 2.76 for
+# the system Docker slot. Manual connection for locally-built snaps requires
+# snapd 2.77.
+assert_contains "$snapcraft" "assumes: [snapd2.76]"
 for snap_file in \
   "$snapcraft" \
   "$snap_install_docs" \
@@ -131,10 +131,11 @@ assert_not_contains "$snap_install_docs" "snap connect openshell:network-bind"
 assert_contains "$snap_install_docs" "snap connect openshell:docker :docker"
 assert_contains "$snap_canary" "install.sh | sh"
 assert_contains "$snap_canary" "ubuntu-snap-system-docker:"
-assert_contains "$snap_canary" "ubuntu-snap-provisions-docker:"
+assert_contains "$snap_canary" "ubuntu-snap-docker-preflight:"
 assert_contains "$snap_repro" 'OPENSHELL_VERSION=dev sh "${install_script}"'
 assert_contains "$snap_repro" "system-docker"
-assert_contains "$snap_repro" "provisions-docker"
+assert_contains "$snap_repro" "missing-docker"
+assert_contains "$snap_repro" "docker-snap"
 assert_not_contains "$snap_canary" "--dangerous"
 assert_not_contains "$snap_repro" "--dangerous"
 assert_not_contains "$snap_canary" "snap connect openshell:docker"

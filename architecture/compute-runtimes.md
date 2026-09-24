@@ -356,7 +356,16 @@ VM runtime state paths are derived only from driver-validated sandbox IDs
 matching `[A-Za-z0-9._-]{1,128}`. The gateway-owned VM driver socket uses a
 private `run/` directory plus Unix peer UID/PID checks. Standalone
 unauthenticated TCP mode is disabled unless explicitly enabled for local
-development.
+development. The VM image cache is owner-only. When the host assembles a
+bootstrap rootfs from OCI layers, cross-layer symlinks may resolve only within
+that rootfs; absolute or escaping targets reject the image before a later layer
+can write through them. Rootfs traversal and mutation use opened directory
+handles with no-follow file creation, so later copies, permission changes, and
+whiteouts cannot be redirected by replacing a validated pathname component.
+The bootstrap rootfs comes only from the operator-configured `bootstrap_image`
+or `default_image`; a sandbox-requested image never becomes the VM bootstrap
+image. The gateway rejects configurations without either trusted source, and
+the standalone driver independently fails startup for the same condition.
 
 Runtime-specific implementation notes belong in the driver crate README:
 
