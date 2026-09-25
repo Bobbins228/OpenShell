@@ -82,10 +82,13 @@ attaches your terminal to that retained process. Add `--detach` to return after
 the sandbox becomes ready without attaching.
 
 An explicit trailing command is foreground even when stdin or stdout is not a
-terminal. The CLI streams its stdout and stderr and returns its exact exit
-status. Exit code 0 leaves a retained sandbox in `Completed`; nonzero leaves it
-in `Error` with `MainProcessFailed`. Use `--no-keep` to delete either result
-after output drains, or `--detach` for a long-running service. Combine
+terminal. The CLI streams its stdout and stderr and reports the command's exit
+status after output drains. A failure to deliver output makes the CLI report a
+failure even if the command itself exited successfully; check the sandbox's
+state before retrying work that might have side effects. Exit code 0 leaves a
+retained sandbox in `Completed`; nonzero leaves it in `Error` with
+`MainProcessFailed`. Use `--no-keep` to delete either result after output
+drains, or `--detach` for a long-running service. Combine
 `--detach --no-keep` when the gateway should run the service without a host
 attachment and delete its sandbox after the service exits.
 
@@ -165,7 +168,13 @@ openshell profile describe github
 openshell profile export github --output yaml
 openshell profile lint --file ./my-profile.yaml
 openshell profile import --file ./my-profile.yaml
+openshell profile lint --url https://example.com/profiles/my-profile.yaml
+openshell profile import --url https://example.com/profiles/my-profile.yaml
 ```
+
+`--url` accepts one HTTP or HTTPS YAML or JSON profile. Review its endpoint and
+binary grants before importing it. The URL path must end in `.yaml`, `.yml`, or
+`.json`; downloads are limited to 1 MiB and 15 seconds.
 
 Use `profile describe` to inspect a definition's credential metadata, endpoints, TLS handling, MCP access settings, rule counts, binaries, source, and scope before creating a provider. Check for `tls: skip` and the uninspected-credential opt-in before relying on displayed L7 rules. List and describe accept table, JSON, and YAML output; use structured output for complete rule definitions, `--workspace` for a workspace catalog, or `--global` for platform scope. Use `profile export` when preparing an editable definition, `profile update <id> --file <file>` to replace an existing custom profile with its current resource version, and `profile delete <id>...` to remove custom profiles. Provider instances remain under `provider`.
 
@@ -399,9 +408,13 @@ openshell sandbox exec --name my-sandbox --workdir /workspace -- ls -la
 openshell sandbox exec --name my-sandbox --env MODE=test -- cargo test
 ```
 
-`sandbox exec` starts an independent sibling process, streams output, and exits
-with the remote command's exit code. Use `sandbox connect` to attach to the
-canonical main process.
+`sandbox exec` starts an independent sibling process and streams output. After
+stdout and stderr drain, it returns the remote command's exit code if delivery
+succeeds. Output delivery failure instead returns exit code 74, even when the
+command exited successfully. A descendant that keeps an inherited output pipe
+open for more than 30 seconds after the command exits triggers that failure.
+Check whether the command ran before retrying work with side effects. Use
+`sandbox connect` to attach to the canonical main process.
 Use `--env` only for non-secret values. Attach credentials to the sandbox with a
 provider instead of passing API keys, tokens, or other secrets to `sandbox exec`.
 
