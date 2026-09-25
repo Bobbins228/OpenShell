@@ -324,6 +324,12 @@ positive canary uses system Docker; negative preflight coverage verifies that
 the installer rejects both missing Docker and the Docker Snap before installing
 OpenShell. Its Debian lane removes snapd before running the installer so Snap
 precedence cannot change the package under test.
+Explicit release tags and the `pre` alias bypass Snap selection and use the
+native Debian or RPM package path even when `snap` is available. The `pre` alias
+checks matching Git tags in version order, then looks up the exact platform
+artifact and verifies the release run instead of listing every repository
+artifact.
+
 Snapd runs the gateway as a root-owned system service. Its generated client
 certificates reside in root-owned snap state and are unavailable to ordinary CLI
 users, so the Snap uses plaintext loopback transport and enables unauthenticated
@@ -530,8 +536,10 @@ RFC's complete qualification coverage.
 The tagged release workflow calls the aggregate Security Scan after publishing
 the candidate's commit-addressed gateway, sandbox, and supervisor images. CodeQL,
 Trivy, Cargo Deny, and Actionlint/Zizmor run for every release tag; Codex Security
-also runs for pre-release tags. High or Critical findings and scanner failures
-fail qualification.
+also runs for pre-release tags. Scanner failures, Cargo Deny advisories, and
+High or Critical Codex Security findings fail qualification. CodeQL, Trivy, and
+Zizmor findings are temporarily informational while the findings accepted for
+v0.1.0 are addressed in 0.1.x releases.
 
 The `Release Qualification` job aggregates security, conformance, feature,
 Docker E2E, and VM E2E results. The currently implemented profile gates stable
