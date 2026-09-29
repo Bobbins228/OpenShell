@@ -919,9 +919,16 @@ the runtime policy it would enforce.
   for that finalized supervisor session to disconnect before deleting an
   ephemeral sandbox. Exit code 0 records
   `Completed/MainProcessCompleted`; nonzero and signal-normalized exits record
-  `Error/MainProcessFailed`. Infrastructure failures also use `Error`, with a
-  distinct condition reason and no fabricated canonical-process result. Runtime
-  restart policies must not replace the canonical process.
+  `Error/MainProcessFailed` when the gateway policy is `Never`. `OnFailure`
+  replaces the runtime after a nonzero result; `Always` replaces it after any
+  result. The gateway starts the first replacement after terminal delivery, then
+  persists a 1-second doubling backoff for repeated quick exits, capped at 3
+  minutes. A 10-second run resets the count. A bounded fallback recovers a
+  restart when terminal finalization is lost. Each replacement starts a new
+  runtime generation with fresh launch credentials. Infrastructure failures also
+  use `Error`, with a distinct condition reason and no fabricated canonical-process
+  result.
+  Native runtime restart policies remain disabled.
 
 ## Shared Boundary Primitives
 

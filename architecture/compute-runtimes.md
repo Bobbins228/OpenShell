@@ -75,6 +75,14 @@ Canonical main-process support is part of the `ComputeDriver` contract. Every
 in-tree and extension driver must forward the exact specification; it is not an
 optional capability that drivers can omit or negotiate.
 
+The gateway also owns canonical main-process restart policy. Drivers disable
+native container, pod, or VM restart behavior and implement the existing stop
+and start operations. When policy selects a restart, the gateway persists the
+`Starting` phase and backoff deadline, stops compute, starts it again after the
+deadline, and waits for a new supervisor session before returning to `Ready`.
+Restart count, exit code, and deadline distinguish this path from an explicit
+start. Driver snapshots cannot override that gateway-owned transition.
+
 Drivers own runtime-specific platform event interpretation. When an event should
 drive client provisioning UI, the driver attaches the shared
 `openshell.progress.*` metadata defined in `openshell-core` instead of requiring
@@ -90,6 +98,9 @@ produce the public `SandboxPhase`:
 backend_phase = derive_phase(driver_status)
 
 public_phase =
+  if persisted_phase == Stopped:                             → Stopped
+  if persisted_phase == Stopping and backend not stopped:    → Stopping
+  if persisted_phase == Starting and backend not Ready:      → Starting
   if backend_phase in {Error, Deleting}:                     → pass through (terminal precedence)
   if driver_reports_runtime_readiness && backend_phase == Ready: → Ready
   if backend_phase == Ready && session connected:             → Ready
@@ -192,6 +203,14 @@ which creates a fresh main-process instance. Drivers must not automatically
 restart a completed or failed canonical process. Before an explicit restart,
 the gateway disconnects the prior supervisor session and deletes its SSH
 sessions so credentials cannot cross runtime generations.
+
+When the sandbox restart policy selects replacement, the gateway instead
+persists `Starting` with the previous exit result, restart count, and backoff
+deadline. The leader claims each due attempt before stopping compute, rotates
+launch credentials, starts the driver with the persisted generation, and waits
+for a different supervisor instance. Stop and delete intent fence late driver
+starts. A fresh supervisor clears the deadline and returns the sandbox to
+`Ready`; a successful main process exit under `OnFailure` remains `Completed`.
 
 `StopSandbox` and `StartSandbox` are idempotent driver operations. Stop
 retains the driver resource and its persistent workspace boundary while making
