@@ -11,7 +11,7 @@ use std::time::Duration;
 use openshell_e2e::harness::binary::{openshell_cmd, openshell_tty_cmd};
 use openshell_e2e::harness::cli::{run_cli, wait_for_sandbox_phase};
 use openshell_e2e::harness::output::{extract_field, strip_ansi};
-use openshell_e2e::harness::sandbox::SandboxGuard;
+use openshell_e2e::harness::sandbox::{SandboxGuard, unique_sandbox_name};
 use serial_test::serial;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::time::{Instant, sleep};
@@ -645,7 +645,19 @@ async fn sandbox_can_be_deleted_while_stopped() {
 #[tokio::test]
 #[serial(sandbox_lifecycle)]
 async fn canonical_main_exit_zero_completes_persistent_sandbox() {
-    let mut cmd = openshell_tty_cmd(&["sandbox", "create", "--", "echo", "OK"]);
+    // Armed before create so a failed create or parse still cleans up.
+    let sandbox_name = unique_sandbox_name();
+    let _cleanup = SandboxGuard::manage_existing(sandbox_name.clone());
+
+    let mut cmd = openshell_tty_cmd(&[
+        "sandbox",
+        "create",
+        "--name",
+        &sandbox_name,
+        "--",
+        "echo",
+        "OK",
+    ]);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let output = cmd.output().await.expect("spawn openshell sandbox create");
@@ -658,11 +670,8 @@ async fn canonical_main_exit_zero_completes_persistent_sandbox() {
         combined.contains("OK"),
         "main output was not streamed:\n{combined}"
     );
-    let sandbox_name =
-        extract_sandbox_name(&combined).expect("sandbox name should be present in output");
 
     if let Err(last_sandbox_list) = assert_sandbox_presence_eventually(&sandbox_name, true).await {
-        delete_sandbox(&sandbox_name).await;
         panic!(
             "sandbox {sandbox_name} should still exist by default after {SANDBOX_PRESENCE_TIMEOUT:?}; \
              last observed sandbox list: {last_sandbox_list:?}"
@@ -688,16 +697,20 @@ async fn canonical_main_exit_zero_completes_persistent_sandbox() {
         details.contains("Phase: Completed"),
         "expected terminal sandbox phase:\n{details}"
     );
-
-    delete_sandbox(&sandbox_name).await;
 }
 
 #[tokio::test]
 #[serial(sandbox_lifecycle)]
 async fn canonical_main_nonzero_exit_preserves_status() {
+    // Armed before create so a failed create or parse still cleans up.
+    let sandbox_name = unique_sandbox_name();
+    let _cleanup = SandboxGuard::manage_existing(sandbox_name.clone());
+
     let mut cmd = openshell_tty_cmd(&[
         "sandbox",
         "create",
+        "--name",
+        &sandbox_name,
         "--",
         "sh",
         "-c",
@@ -720,8 +733,6 @@ async fn canonical_main_nonzero_exit_preserves_status() {
         combined.contains("failed-main"),
         "main output was not streamed:\n{combined}"
     );
-    let sandbox_name =
-        extract_sandbox_name(&combined).expect("sandbox name should be present in output");
 
     let mut get_cmd = openshell_cmd();
     get_cmd
@@ -742,7 +753,6 @@ async fn canonical_main_nonzero_exit_preserves_status() {
         details.contains("Exit Code: 7"),
         "missing exit code:\n{details}"
     );
-    delete_sandbox(&sandbox_name).await;
 }
 
 #[tokio::test]
