@@ -10,7 +10,10 @@
 #   ./deploy/konflux/build-local.sh gateway
 #   ./deploy/konflux/build-local.sh supervisor
 #   ./deploy/konflux/build-local.sh sandbox
+#   ./deploy/konflux/build-local.sh openclaw
 #   ./deploy/konflux/build-local.sh all
+#
+# The openclaw smoke test additionally requires host openssl.
 #
 # Override architecture (default: host arch via uname -m):
 #   PLATFORM=linux/arm64 ./deploy/konflux/build-local.sh supervisor
@@ -29,7 +32,12 @@ esac
 PLATFORM="${PLATFORM:-${DEFAULT_PLATFORM}}"
 
 CLEANUP_PATHS=()
+RESTORE_FILES=()
 cleanup() {
+    local i
+    for ((i = 0; i < ${#RESTORE_FILES[@]}; i += 2)); do
+        cp -p "${RESTORE_FILES[i]}" "${RESTORE_FILES[i+1]}"
+    done
     for p in "${CLEANUP_PATHS[@]}"; do
         rm -rf "$p"
     done
@@ -39,8 +47,9 @@ trap cleanup EXIT
 
 build_image() {
     local component="$1"
-    local dockerfile konfig_dir output_dir repos_dir
+    local dockerfile konfig_dir output_dir repos_dir prefetch_input
 
+    prefetch_input=""
     case "$component" in
         gateway)
             dockerfile="deploy/docker/Dockerfile.konflux.gateway"
@@ -58,26 +67,48 @@ build_image() {
             dockerfile="deploy/docker/Dockerfile.konflux.cli"
             konfig_dir="deploy/konflux/cli"
             ;;
+        openclaw)
+            dockerfile="deploy/docker/Dockerfile.konflux.openclaw"
+            konfig_dir="deploy/konflux/openclaw"
+            prefetch_input="[
+            {\"path\": \"${konfig_dir}\", \"type\": \"npm\"},
+            {\"path\": \"${konfig_dir}\", \"type\": \"rpm\"}
+        ]"
+            ;;
         *)
             echo "Unknown component: $component" >&2
             exit 1
             ;;
     esac
 
+    if [[ -z "${prefetch_input}" ]]; then
+        prefetch_input="[
+            {\"path\": \".\", \"type\": \"cargo\"},
+            {\"path\": \"${konfig_dir}\", \"type\": \"rpm\"},
+            {\"path\": \"${konfig_dir}\", \"type\": \"generic\", \"lockfile\": \"generic-fetcher.yaml\"}
+        ]"
+    fi
+
     output_dir="${OUTPUT_DIR}/${component}"
     repos_dir=$(mktemp -d)
     CLEANUP_PATHS+=("${repos_dir}")
+
+    if [[ -f "${REPO_ROOT}/${konfig_dir}/package-lock.json" ]]; then
+        local npm_backup
+        npm_backup=$(mktemp -d)
+        CLEANUP_PATHS+=("${npm_backup}")
+        cp -p "${REPO_ROOT}/${konfig_dir}/package.json" "${npm_backup}/package.json"
+        cp -p "${REPO_ROOT}/${konfig_dir}/package-lock.json" "${npm_backup}/package-lock.json"
+        RESTORE_FILES+=("${npm_backup}/package.json" "${REPO_ROOT}/${konfig_dir}/package.json")
+        RESTORE_FILES+=("${npm_backup}/package-lock.json" "${REPO_ROOT}/${konfig_dir}/package-lock.json")
+    fi
 
     echo "=== Prefetching ${component} dependencies ==="
     rm -rf "${output_dir}"
     hermeto fetch-deps \
         --source "${REPO_ROOT}" \
         --output "${output_dir}" \
-        "[
-            {\"path\": \".\", \"type\": \"cargo\"},
-            {\"path\": \"${konfig_dir}\", \"type\": \"rpm\"},
-            {\"path\": \"${konfig_dir}\", \"type\": \"generic\", \"lockfile\": \"generic-fetcher.yaml\"}
-        ]"
+        "${prefetch_input}"
 
     echo "=== Injecting files ==="
     hermeto inject-files "${output_dir}" --for-output-dir /cachi2/output
@@ -132,15 +163,20 @@ build_image() {
 
     echo "=== ${component} built successfully ==="
     # The sandbox runtime image is ubi-micro without crypto-policies.
-    if [[ "${component}" != "sandbox" ]]; then
+    # openclaw stays on UBI 9 with DEFAULT:PQ; smoke-test.sh asserts it.
+    if [[ "${component}" != "sandbox" && "${component}" != "openclaw" ]]; then
         test "$(podman run --rm --user=0 --entrypoint /usr/bin/update-crypto-policies "openshell-${component}-konflux" --show)" = "DEFAULT:PQ"
     fi
-    podman run --rm --platform "${PLATFORM}" "openshell-${component}-konflux" --help 2>&1 | head -3
+    if [[ "${component}" == "openclaw" ]]; then
+        PLATFORM="${PLATFORM}" bash "${REPO_ROOT}/deploy/konflux/openclaw/smoke-test.sh" "openshell-${component}-konflux"
+    else
+        podman run --rm --platform "${PLATFORM}" "openshell-${component}-konflux" --help 2>&1 | head -3
+    fi
     echo ""
 }
 
 if [[ $# -eq 0 ]]; then
-    echo "Usage: $0 {gateway|supervisor|sandbox|cli|all}" >&2
+    echo "Usage: $0 {gateway|supervisor|sandbox|cli|openclaw|all}" >&2
     exit 1
 fi
 
@@ -150,6 +186,7 @@ if [[ "$target" == "all" ]]; then
     build_image supervisor
     build_image sandbox
     build_image cli
+    build_image openclaw
 else
     build_image "$target"
 fi
