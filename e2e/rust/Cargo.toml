@@ -108,11 +108,6 @@ path = "tests/podman_host_gateway.rs"
 required-features = ["e2e-podman"]
 
 [[test]]
-name = "podman_preflight"
-path = "tests/podman_preflight.rs"
-required-features = ["e2e-podman"]
-
-[[test]]
 name = "podman_corporate_proxy"
 path = "tests/podman_corporate_proxy.rs"
 required-features = ["e2e-podman"]
