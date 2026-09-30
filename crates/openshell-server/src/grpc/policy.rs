@@ -3346,10 +3346,10 @@ pub(super) async fn handle_get_sandbox_provider_environment(
         .await
         .map_err(|e| Status::internal(format!("fetch sandbox failed: {e}")))?
         .ok_or_else(|| Status::not_found("sandbox not found"))?;
-    Ok(Response::new(
+    let environment =
         load_sandbox_provider_environment(state, &sandbox, supports_static_credential_bindings)
-            .await?,
-    ))
+            .await?;
+    Ok(Response::new(environment))
 }
 
 /// Materialize a privileged provider snapshot after the caller has authorized
@@ -3476,6 +3476,7 @@ pub(super) async fn load_sandbox_provider_environment(
         .collect();
     Ok(GetSandboxProviderEnvironmentResponse {
         environment: provider_environment.environment,
+        files: provider_environment.files,
         provider_env_revision,
         credential_expiration_times,
         dynamic_credentials: provider_environment.dynamic_credentials,
@@ -11271,6 +11272,7 @@ mod tests {
                     deletion_time: None,
                 }),
                 profile: Some(openshell_core::proto::ProviderProfile {
+                    files: Vec::new(),
                     id: "generic".to_string(),
                     resource_version: 0,
                     annotations: HashMap::new(),
@@ -11364,6 +11366,7 @@ mod tests {
                     deletion_time: None,
                 }),
                 profile: Some(openshell_core::proto::ProviderProfile {
+                    files: Vec::new(),
                     id: "custom-api".to_string(),
                     resource_version: 0,
                     annotations: HashMap::new(),
@@ -11435,6 +11438,7 @@ mod tests {
                     deletion_time: None,
                 }),
                 profile: Some(openshell_core::proto::ProviderProfile {
+                    files: Vec::new(),
                     id: "custom-api".to_string(),
                     resource_version: 0,
                     annotations: HashMap::new(),
@@ -12592,6 +12596,7 @@ mod tests {
                     deletion_time: None,
                 }),
                 profile: Some(ProviderProfile {
+                    files: Vec::new(),
                     id: "custom-policy".to_string(),
                     resource_version: 0,
                     annotations: HashMap::new(),
@@ -12813,6 +12818,89 @@ mod tests {
 
         assert_eq!(legacy_env, v2_env);
         assert_eq!(v2_env.get("GITHUB_TOKEN"), Some(&"ghp-test".to_string()));
+    }
+
+    #[tokio::test]
+    async fn provider_files_do_not_block_legacy_provider_environment_requests() {
+        use openshell_core::proto::{
+            GetSandboxProviderEnvironmentRequest, ProviderProfile, ProviderProfileCategory,
+            ProviderProfileFile,
+        };
+
+        let state = test_server_state().await;
+        state
+            .store
+            .put_message(&StoredProviderProfile {
+                metadata: Some(openshell_core::proto::datamodel::v1::ObjectMeta {
+                    id: "profile-config-only".to_string(),
+                    name: "config-only".to_string(),
+                    workspace: "default".to_string(),
+                    ..Default::default()
+                }),
+                profile: Some(ProviderProfile {
+                    id: "config-only".to_string(),
+                    display_name: "Config only".to_string(),
+                    category: ProviderProfileCategory::Other as i32,
+                    files: vec![ProviderProfileFile {
+                        path: "client.toml".to_string(),
+                        content: "endpoint = '{{config.endpoint}}'".to_string(),
+                        env_var: "CLIENT_CONFIG_FILE".to_string(),
+                    }],
+                    ..Default::default()
+                }),
+            })
+            .await
+            .unwrap();
+
+        let mut file_provider = test_provider("work-config", "config-only");
+        file_provider.credentials.clear();
+        file_provider
+            .config
+            .insert("endpoint".to_string(), "https://config.example".to_string());
+        state.store.put_message(&file_provider).await.unwrap();
+        state
+            .store
+            .put_message(&test_provider("work-github", "github"))
+            .await
+            .unwrap();
+        state
+            .store
+            .put_message(&test_sandbox(
+                "sb-files-and-credentials",
+                "files-and-credentials",
+                test_policy_with_rule("sandbox_only", "sandbox.example.com"),
+                vec!["work-config".to_string(), "work-github".to_string()],
+            ))
+            .await
+            .unwrap();
+
+        // An older supervisor sends this request without a provider-file
+        // capability field and ignores the additive files response field.
+        let response = handle_get_sandbox_provider_environment(
+            &state,
+            with_user(Request::new(GetSandboxProviderEnvironmentRequest {
+                sandbox_id: "sb-files-and-credentials".to_string(),
+                supports_static_credential_bindings: true,
+            })),
+        )
+        .await
+        .unwrap()
+        .into_inner();
+
+        assert_eq!(
+            response.environment.get("GITHUB_TOKEN"),
+            Some(&"ghp-test".to_string())
+        );
+        assert_eq!(
+            response.environment.get("CLIENT_CONFIG_FILE"),
+            Some(&"/run/openshell/providers/work-config/client.toml".to_string())
+        );
+        assert_eq!(
+            response
+                .files
+                .get("/run/openshell/providers/work-config/client.toml"),
+            Some(&"endpoint = 'https://config.example'".to_string())
+        );
     }
 
     #[tokio::test]
@@ -13712,6 +13800,7 @@ mod tests {
                     deletion_time: None,
                 }),
                 profile: Some(ProviderProfile {
+                    files: Vec::new(),
                     id: "custom-token".to_string(),
                     resource_version: 0,
                     annotations: HashMap::new(),
@@ -14042,6 +14131,7 @@ mod tests {
                 profiles: vec![ProviderProfileImportItem {
                     source: "custom-api.yaml".to_string(),
                     profile: Some(ProviderProfile {
+                        files: Vec::new(),
                         id: "custom-api".to_string(),
                         resource_version: 0,
                         annotations: HashMap::new(),
@@ -17715,6 +17805,7 @@ mod tests {
                     deletion_time: None,
                 }),
                 profile: Some(ProviderProfile {
+                    files: Vec::new(),
                     id: "custom-api".to_string(),
                     resource_version: 0,
                     annotations: HashMap::new(),
