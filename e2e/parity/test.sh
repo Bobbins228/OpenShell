@@ -286,6 +286,9 @@ if external:
             },
         }
     )
+if external and schema == 2:
+    del launch["external_driver_environment"]["OPENSHELL_PODMAN_TLS_CERT"]
+    del launch["external_driver_environment"]["OPENSHELL_PODMAN_TLS_KEY"]
 Path(os.environ["OPENSHELL_PARITY_LAUNCH_MANIFEST_CAPTURE"]).write_text(
     json.dumps(launch, separators=(",", ":")) + "\n", encoding="utf-8"
 )
