@@ -19,7 +19,7 @@
 #
 # Local build:  ./deploy/konflux/build-local.sh openclaw
 #
-# No RUN heredocs and no RUN --mount: build-local.sh sed-injects
+# No RUN heredocs and no RUN --mount: build-local.sh awk-injects
 # `. /cachi2/cachi2.env &&` after every `RUN ` to source the hermetic
 # environment, so every RUN must start at column 0 with `RUN ` and use
 # `&& \` continuations only.
