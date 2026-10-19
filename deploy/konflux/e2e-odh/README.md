@@ -63,3 +63,11 @@ The image name is `odh-openshell-e2e`; Konflux automation generates the
 Tekton YAML files.
 Before merging, validate the local hermetic build on both `linux/amd64` and
 `linux/arm64` using `PLATFORM` with `deploy/konflux/build-local.sh e2e-odh`.
+
+`sync-generic-fetcher.py` keeps the Dockerfile tool versions and the Hermeto
+generic artifacts consistent. `--check` (offline) verifies URLs, filenames,
+and checksums match the Dockerfile; `--update <tool>` recomputes checksums by
+downloading both architectures concurrently, retrying transient failures and
+verifying each hash against the checksum sidecar its publisher signs — run it
+after a Renovate bump, as the PR note instructs. Nothing is written unless
+every download succeeds and matches its sidecar.
