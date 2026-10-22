@@ -359,6 +359,12 @@ class InstallTests(unittest.TestCase):
             dashboard["dashboard"]["image"]["repository"],
             "opendatahub/odh-openshell-dashboard",
         )
+        for component, repository in (
+            ("gateway", "opendatahub/odh-openshell-gateway"),
+            ("supervisor", "opendatahub/odh-openshell-supervisor"),
+            ("sandboxRuntime", "opendatahub/odh-openshell-sandbox"),
+        ):
+            self.assertEqual(gateway[component]["image"]["repository"], repository)
         self.assertFalse(gateway["server"]["tls"]["enableMtls"])
         self.assertIsNone(gateway["securityContext"]["runAsUser"])
 

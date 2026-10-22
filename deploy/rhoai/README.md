@@ -104,11 +104,18 @@ which needs a chart release that passes `oidc.userRole` to the dashboard; with
 chart `0.1.1` they refuse users whose only role is `user_role` unless that role
 is named `user`.
 
-For ODH gateway images, select the development chart matching the upstream commit
-of the downstream build, then set `gateway.images` to the downstream registry,
-repositories, and image tags/digests. The installer does not infer either mapping
-or silently select a newer chart. Source version `0.0.0`, floating tags, and
-version ranges are rejected for installation.
+The example also sets `gateway.images` to the ODH builds of the gateway,
+supervisor, and sandbox runtime (`quay.io/opendatahub/odh-openshell-gateway`,
+`odh-openshell-supervisor`, and `odh-openshell-sandbox`). They are tagged
+`v<OpenShell version>-rhaiv.<N>`. Use the gateway chart of the same OpenShell
+version, and replace each placeholder with the digest of that tag; for example
+chart `0.1.3` with `v0.1.3-rhaiv.3`. For an ODH build from an unreleased commit,
+select the development chart matching the upstream commit of the downstream build.
+Without `gateway.images`, the chart installs its upstream publisher's images.
+`gateway.images.sandbox`, the default image for sandboxes that name none, stays
+on the chart default; ODH publishes no replacement. The installer does not infer
+either mapping or silently select a newer chart. Source version `0.0.0`, floating
+tags, and version ranges are rejected for installation.
 
 Save the browser client's secret to `dashboard-client-secret.txt` beside the JSON,
 using a trusted editor or your secret manager. Restrict its permissions to `0600`.
