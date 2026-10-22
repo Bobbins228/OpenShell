@@ -351,6 +351,14 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(
             gateway["server"]["oidc"]["issuer"], dashboard["oidc"]["issuer"]
         )
+        # The dashboard decides who is entitled from the same two role names
+        # the gateway enforces.
+        for role in ("adminRole", "userRole"):
+            self.assertEqual(dashboard["oidc"][role], gateway["server"]["oidc"][role])
+        self.assertEqual(
+            dashboard["dashboard"]["image"]["repository"],
+            "opendatahub/odh-openshell-dashboard",
+        )
         self.assertFalse(gateway["server"]["tls"]["enableMtls"])
         self.assertIsNone(gateway["securityContext"]["runAsUser"])
 

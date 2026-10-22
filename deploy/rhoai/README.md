@@ -88,12 +88,25 @@ cp deploy/rhoai/config.example.json "$HOME/.config/openshell-rhoai/config.json"
 Edit the copy. Replace both version placeholders with exact published SemVer
 chart versions, and set the namespace, kubeconfig context, DNS names, and OIDC
 claims. The two versions need not have the same patch number. The dashboard OCI
-reference currently points to its upstream publisher, not an ODH chart registry.
-Both chart references are configurable for mirrors.
+reference currently points to its upstream publisher, not an ODH chart registry,
+and that chart's default image is the upstream publisher's build. Both chart
+references are configurable for mirrors.
 
-For ODH images, select the development chart matching the upstream commit of
-the downstream build, then set `gateway.images` to the downstream registry,
-repositories, and image tags/digests. The installer does not infer that mapping
+The example sets `dashboard.images.dashboard` to the ODH build,
+`quay.io/opendatahub/odh-openshell-dashboard`. Konflux builds it from each commit
+of the ODH dashboard fork's `main` and tags it with that commit's full SHA. Replace
+the digest placeholder with the digest of a build whose source matches the
+dashboard chart version, and do not use the moving `odh-stable` tag. Dashboard
+chart `0.1.1` matches fork commit `03995be`:
+`sha256:77c7434a172800ce561b2910b4964728f28ada39d77f26d7039be60ed3663ece`.
+Builds from fork commit `1c45566` onward add the dashboard's entitlement page,
+which needs a chart release that passes `oidc.userRole` to the dashboard; with
+chart `0.1.1` they refuse users whose only role is `user_role` unless that role
+is named `user`.
+
+For ODH gateway images, select the development chart matching the upstream commit
+of the downstream build, then set `gateway.images` to the downstream registry,
+repositories, and image tags/digests. The installer does not infer either mapping
 or silently select a newer chart. Source version `0.0.0`, floating tags, and
 version ranges are rejected for installation.
 
