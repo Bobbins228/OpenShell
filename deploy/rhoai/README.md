@@ -96,13 +96,17 @@ The example sets `dashboard.images.dashboard` to the ODH build,
 `quay.io/opendatahub/odh-openshell-dashboard`. Konflux builds it from each commit
 of the ODH dashboard fork's `main` and tags it with that commit's full SHA. Replace
 the digest placeholder with the digest of a build whose source matches the
-dashboard chart version, and do not use the moving `odh-stable` tag. Dashboard
-chart `0.1.1` matches fork commit `03995be`:
-`sha256:77c7434a172800ce561b2910b4964728f28ada39d77f26d7039be60ed3663ece`.
+dashboard chart version, and do not use the moving `odh-stable` tag:
+
+| Dashboard chart | ODH fork commit | Image digest |
+|---|---|---|
+| `0.1.2` | `ae76c31` | `sha256:cfb3b592c5909c7c1a5d5622f98a20bf8c503554d53b3441abb189140254450b` |
+| `0.1.1` | `03995be` | `sha256:77c7434a172800ce561b2910b4964728f28ada39d77f26d7039be60ed3663ece` |
+
 Builds from fork commit `1c45566` onward add the dashboard's entitlement page,
-which needs a chart release that passes `oidc.userRole` to the dashboard; with
-chart `0.1.1` they refuse users whose only role is `user_role` unless that role
-is named `user`.
+which reads the user role the installer passes as `oidc.userRole`. Chart `0.1.2`
+and later pass it to the dashboard. Chart `0.1.1` does not, so a newer build on
+it refuses users whose only role is `user_role` unless that role is named `user`.
 
 The example also sets `gateway.images` to the ODH builds of the gateway,
 supervisor, and sandbox runtime (`quay.io/opendatahub/odh-openshell-gateway`,
