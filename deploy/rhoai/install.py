@@ -202,6 +202,12 @@ def load_config(path, namespace=None):
                 all(isinstance(value, str) for value in image.values()),
                 "Image values must be strings",
             )
+            if "digest" in image:
+                require(
+                    re.fullmatch(r"sha256:[0-9a-fA-F]{64}", image["digest"]),
+                    f"{name}.images.{component}.digest must be sha256: followed by "
+                    "64 hexadecimal characters",
+                )
     require(
         config["gateway"]["host"] != config["dashboard"]["host"],
         "Gateway and dashboard need distinct hosts",

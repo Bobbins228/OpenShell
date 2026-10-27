@@ -27,6 +27,10 @@ def configuration():
     config["context"] = "test-context"
     config["gateway"]["version"] = "0.1.3"
     config["dashboard"]["version"] = "0.1.7"
+    for section in ("gateway", "dashboard"):
+        for image in config[section].get("images", {}).values():
+            if "digest" in image:
+                image["digest"] = f"sha256:{'a' * 64}"
     config["oidc"].pop("client_secret_file")
     return config
 
@@ -162,6 +166,30 @@ class InstallTests(unittest.TestCase):
         for version in ("0.0.0-dev.e7fdd6b", "0.2.1", "1.2.3+rhaiv.5"):
             self.config["gateway"]["version"] = version
             self.assertEqual(self.load()["gateway"]["version"], version)
+
+    def test_rejects_invalid_image_digests(self):
+        for section, component in (
+            ("gateway", "gateway"),
+            ("gateway", "supervisor"),
+            ("gateway", "sandboxRuntime"),
+            ("dashboard", "dashboard"),
+        ):
+            with self.subTest(section=section, component=component):
+                self.config[section]["images"][component]["digest"] = (
+                    "REPLACE_WITH_VERIFIED_IMAGE_DIGEST"
+                )
+                with self.assertRaisesRegex(ValueError, "digest must be sha256"):
+                    self.load()
+                self.config = configuration()
+        for digest in (
+            "sha256:abc123",
+            f"sha256:{'g' * 64}",
+            f"sha512:{'a' * 64}",
+        ):
+            with self.subTest(digest=digest):
+                self.config["gateway"]["images"]["gateway"]["digest"] = digest
+                with self.assertRaisesRegex(ValueError, "digest must be sha256"):
+                    self.load()
 
     def test_yaml_overlays_merge_in_order_and_preserve_managed_values(self):
         (self.root / "base.yaml").write_text(
