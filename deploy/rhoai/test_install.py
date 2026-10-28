@@ -202,25 +202,30 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(gateway["gateway"]["image"], image)
 
     def test_warns_when_old_dashboard_chart_cannot_pass_custom_user_role(self):
-        self.config["dashboard"]["version"] = "0.1.1"
-        stderr = io.StringIO()
-        with redirect_stderr(stderr):
-            self.load()
-        self.assertIn("charts before 0.1.2", stderr.getvalue())
-        self.assertIn("openshell-user", stderr.getvalue())
+        for version in ("0.1.1", "0.1.2-rc.1"):
+            with self.subTest(version=version):
+                self.config["dashboard"]["version"] = version
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    self.load()
+                self.assertIn("charts before 0.1.2", stderr.getvalue())
+                self.assertIn("openshell-user", stderr.getvalue())
 
+        self.config["dashboard"]["version"] = "0.1.1"
         self.config["oidc"]["user_role"] = "user"
         stderr = io.StringIO()
         with redirect_stderr(stderr):
             self.load()
         self.assertEqual(stderr.getvalue(), "")
 
-        self.config["dashboard"]["version"] = "0.1.2"
         self.config["oidc"]["user_role"] = "openshell-user"
-        stderr = io.StringIO()
-        with redirect_stderr(stderr):
-            self.load()
-        self.assertEqual(stderr.getvalue(), "")
+        for version in ("0.1.2", "0.1.2+build.1"):
+            with self.subTest(version=version):
+                self.config["dashboard"]["version"] = version
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    self.load()
+                self.assertEqual(stderr.getvalue(), "")
 
     def test_yaml_overlays_merge_in_order_and_preserve_managed_values(self):
         (self.root / "base.yaml").write_text(

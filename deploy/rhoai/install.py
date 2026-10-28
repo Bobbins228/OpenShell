@@ -286,11 +286,15 @@ def load_config(path, namespace=None):
                 f"Missing or empty oidc.{key}",
             )
             oidc[key] = str(source)
-    dashboard_release = config["dashboard"]["version"].split("-", 1)[0].split("+", 1)[0]
-    dashboard_version = tuple(int(part) for part in dashboard_release.split("."))
-    if dashboard_version < (0, 1, 2) and oidc["user_role"] != "user":
+    dashboard_release = config["dashboard"]["version"].split("+", 1)[0]
+    dashboard_core, prerelease_separator, _ = dashboard_release.partition("-")
+    dashboard_version = tuple(int(part) for part in dashboard_core.split("."))
+    before_role_chart = dashboard_version < (0, 1, 2) or (
+        dashboard_version == (0, 1, 2) and bool(prerelease_separator)
+    )
+    if before_role_chart and oidc["user_role"] != "user":
         print(
-            "Warning: dashboard charts before 0.1.2 do not pass oidc.userRole. "
+            "Warning: dashboard charts before 0.1.2 may not pass oidc.userRole. "
             "Dashboard builds with the entitlement page may deny users with only "
             f"the {oidc['user_role']!r} role. Pair chart 0.1.2 or later with a "
             "matching image, or use a pre-entitlement dashboard build.",
