@@ -23,8 +23,6 @@ depends = [
   "test:docs-website",
   "test:docs-nav",
   "test:maintainer-approval",
-  "test:odh-deploy-digests",
-  "test:odh-generic-fetcher",
 ]
 
 ["test:docs-website"]
