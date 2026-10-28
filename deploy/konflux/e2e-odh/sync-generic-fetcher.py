@@ -11,9 +11,9 @@ filename for the Dockerfile version and a well-formed SHA-256 checksum.
 `--update TOOL...` rewrites the artifact list from the Dockerfile versions and
 recomputes the checksums of the named tools by downloading both
 architectures — concurrently, with retries on transient failures, each hash
-verified against the checksum sidecar its publisher signs — use it after
-Renovate bumps a version. Other tools keep their recorded checksums. Nothing
-is written unless every download succeeds and matches its sidecar.
+checked against a publisher-provided checksum sidecar — use it after Renovate
+bumps a version. Other tools keep their recorded checksums. Nothing is written
+unless every download succeeds and matches its sidecar.
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlparse
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[3]
 DOCKERFILE = ROOT / "deploy/docker/Dockerfile.konflux.e2e-odh"
@@ -45,9 +45,10 @@ class Tool:
     arg: str
     url: str
     filename: str
-    # URL of the checksum sidecar the publisher signs the artifact with;
-    # fetched on --update so a substituted download is never blessed.
+    # URL and asset name recorded in the checksum sidecar. The sidecar is
+    # fetched on --update to catch corrupted or inconsistent downloads.
     sidecar: str
+    sidecar_filename: str
     arch: dict[str, str]
 
 
@@ -58,6 +59,7 @@ TOOLS = {
         "https://github.com/astral-sh/uv/releases/download/{v}/uv-{a}-unknown-linux-gnu.tar.gz",
         "uv-{v}-{a}-unknown-linux-gnu.tar.gz",
         "https://github.com/astral-sh/uv/releases/download/{v}/uv-{a}-unknown-linux-gnu.tar.gz.sha256",
+        "uv-{a}-unknown-linux-gnu.tar.gz",
         _RUST_ARCH,
     ),
     "oc": Tool(
@@ -65,6 +67,7 @@ TOOLS = {
         "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{v}/openshift-client-linux-{a}-rhel9-{v}.tar.gz",
         "openshift-client-linux-{a}-rhel9-{v}.tar.gz",
         "https://mirror.openshift.com/pub/openshift-v4/clients/ocp/{v}/sha256sum.txt",
+        "openshift-client-linux-{a}-rhel9-{v}.tar.gz",
         _GO_ARCH,
     ),
     "helm": Tool(
@@ -72,6 +75,7 @@ TOOLS = {
         "https://get.helm.sh/helm-v{v}-linux-{a}.tar.gz",
         "helm-v{v}-linux-{a}.tar.gz",
         "https://get.helm.sh/helm-v{v}-linux-{a}.tar.gz.sha256sum",
+        "helm-v{v}-linux-{a}.tar.gz",
         _GO_ARCH,
     ),
     "nextest": Tool(
@@ -79,6 +83,7 @@ TOOLS = {
         "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-{v}/cargo-nextest-{v}-{a}-unknown-linux-gnu.tar.gz",
         "cargo-nextest-{v}-{a}-unknown-linux-gnu.tar.gz",
         "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-{v}/cargo-nextest-{v}-{a}-unknown-linux-gnu.sha256",
+        "cargo-nextest-{v}-{a}-unknown-linux-gnu.tar.gz",
         _RUST_ARCH,
     ),
 }
@@ -139,13 +144,14 @@ def read_fetcher(fetcher: Path = FETCHER) -> tuple[str, list[Artifact]]:
     return header + sep, artifacts
 
 
-def expected(name: str, version: str, arch: str) -> tuple[str, str, str]:
+def expected(name: str, version: str, arch: str) -> tuple[str, str, str, str]:
     tool = TOOLS[name]
     values = {"v": version, "a": tool.arch[arch]}
     return (
         tool.url.format(**values),
         tool.filename.format(**values),
         tool.sidecar.format(**values),
+        tool.sidecar_filename.format(**values),
     )
 
 
@@ -163,7 +169,7 @@ def check(versions: dict[str, str], artifacts: list[Artifact]) -> list[str]:
     claimed: set[int] = set()
     for name in TOOLS:
         for arch in ARCHES:
-            url, filename, _ = expected(name, versions[name], arch)
+            url, filename, _, _ = expected(name, versions[name], arch)
             matches = [
                 i
                 for i, a in enumerate(artifacts)
@@ -199,8 +205,8 @@ RETRY_ATTEMPTS = 3
 def _with_retry(url: str, consume, what: str):
     """Run `consume` on `url`'s response, retrying transient failures.
 
-    HTTP 4xx is permanent and raises immediately; connection errors,
-    timeouts, and HTTP 5xx are retried with exponential backoff.
+    HTTP 4xx (other than rate limiting) is permanent and raises immediately;
+    connection errors, timeouts, HTTP 429, and HTTP 5xx are retried.
     """
     require_https(url)
     for attempt in range(1, RETRY_ATTEMPTS + 1):
@@ -210,14 +216,23 @@ def _with_retry(url: str, consume, what: str):
                 return consume(response)
         except urllib.error.HTTPError as err:
             # Client errors are permanent; the mirror hiccuping is not.
-            if 400 <= err.code < 500 or attempt == RETRY_ATTEMPTS:
+            if (400 <= err.code < 500 and err.code != 429) or attempt == RETRY_ATTEMPTS:
                 raise
             last_error: Exception = err
         except (urllib.error.URLError, TimeoutError, OSError) as err:
             if attempt == RETRY_ATTEMPTS:
                 raise
             last_error = err
-        delay = 2 ** (attempt - 1)
+        retry_after = (
+            last_error.headers.get("Retry-After")
+            if isinstance(last_error, urllib.error.HTTPError)
+            else None
+        )
+        delay = (
+            int(retry_after)
+            if retry_after and retry_after.isdigit()
+            else 2 ** (attempt - 1)
+        )
         print(
             f"{url}: {last_error}; attempt {attempt}/{RETRY_ATTEMPTS} failed "
             f"while {what}, retrying in {delay}s",
@@ -229,9 +244,12 @@ def _with_retry(url: str, consume, what: str):
 
 def sha256_of(url: str) -> str:
     """Download `url` and return its `sha256:` checksum."""
-    digest = hashlib.sha256()
 
     def consume(response):
+        # _with_retry invokes this once per response. The digest must be
+        # per-attempt too: a partial failed download cannot contaminate the
+        # checksum of a complete retry.
+        digest = hashlib.sha256()
         for chunk in iter(lambda: response.read(1 << 20), b""):
             digest.update(chunk)
         return f"sha256:{digest.hexdigest()}"
@@ -241,32 +259,28 @@ def sha256_of(url: str) -> str:
 
 def fetch_text(url: str) -> str:
     """Download `url` and return its body as text."""
-    return _with_retry(url, lambda response: response.read().decode(), "fetching the sidecar")
+    return _with_retry(
+        url, lambda response: response.read().decode(), "fetching the sidecar"
+    )
 
 
 def published_checksum(sidecar_url: str, filename: str) -> str:
-    """Return the checksum a publisher sidecar records for `filename`.
-
-    Prefers the line naming the artifact exactly; falls back to a
-    single-checksum sidecar (uv names the file without its version).
-    """
+    """Return the checksum a publisher sidecar records for `filename`."""
     text = fetch_text(sidecar_url)
     lines = [line for line in text.splitlines() if line.strip()]
     for line in lines:
         parts = line.split()
         if len(parts) >= 2 and parts[1].lstrip("*") == filename:
             return f"sha256:{parts[0]}"
-    if len(lines) == 1:
-        return f"sha256:{lines[0].split()[0]}"
     raise SystemExit(f"{sidecar_url}: no checksum recorded for {filename}")
 
 
 def download_verified(url: str, sidecar_url: str, filename: str) -> str:
     """Download `url`, hash it, and verify the hash against the sidecar.
 
-    Without this check the download itself would be the trust root for the
-    checksums Hermeto later enforces: a substituted tarball would be blessed
-    with its own digest.
+    The check catches corruption or an inconsistent artifact/sidecar response;
+    it does not make the sidecar, which comes from the same publisher origin,
+    an independent trust root.
     """
     checksum = sha256_of(url)
     published = published_checksum(sidecar_url, filename)
@@ -324,9 +338,9 @@ def update(
     jobs: dict[str, tuple[str, str]] = {}  # url -> (sidecar_url, filename)
     for name in TOOLS:
         for arch in ARCHES:
-            url, filename, sidecar = expected(name, versions[name], arch)
+            url, _, sidecar, sidecar_filename = expected(name, versions[name], arch)
             if name in tools:
-                jobs[url] = (sidecar, filename)
+                jobs[url] = (sidecar, sidecar_filename)
             elif url not in recorded:
                 raise SystemExit(
                     f"{name} {arch}: no recorded checksum for {url}; run --update {name}"
@@ -350,7 +364,7 @@ def update(
     for name in TOOLS:
         group = []
         for arch in ARCHES:
-            url, filename, _ = expected(name, versions[name], arch)
+            url, filename, _, _ = expected(name, versions[name], arch)
             checksum = checksums[url] if url in checksums else recorded[url]
             group.append(Artifact(url, checksum, filename))
         groups.append(group)

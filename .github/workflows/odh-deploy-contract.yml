@@ -14,6 +14,10 @@ on:
       - e2e/rust/tests/odh/tiers.toml
       - deploy/helm/openshell/ci/values-openshift-e2e.yaml
       - odh/values-openshift-e2e.yaml
+      - deploy/docker/Dockerfile.konflux.e2e-odh
+      - deploy/konflux/e2e-odh/**
+      - renovate.json
+      - tasks/test-odh.toml
       - .github/workflows/odh-deploy-contract.yml
   workflow_dispatch:
 
@@ -42,3 +46,8 @@ jobs:
 
       - name: Run the deploy digest contract suite
         run: bash odh/scripts/tests/test-openshell-deploy-from-quay.sh
+
+      - name: Verify generic-fetcher synchronization
+        run: |
+          python3 deploy/konflux/e2e-odh/sync-generic-fetcher.py --check
+          python3 deploy/konflux/e2e-odh/sync-generic-fetcher_test.py

@@ -98,7 +98,7 @@ run_deploy() {
 	# pins the CLI to the mock instead of an inherited real binary, and a
 	# leftover OPENSHELL_E2E_DEPLOY_STATE_DIR from a live e2e session cannot
 	# redirect the deploy's state handling.
-	env -u ROUTE_HOST -u OPENSHELL_E2E_DEPLOY_STATE_DIR \
+	env -u ROUTE_HOST -u OPENSHELL_E2E_RUN_ID -u OPENSHELL_E2E_DEPLOY_STATE_DIR \
 		PATH="${MOCK_BIN}:${PATH}" HOME="${WORKDIR}/home" \
 		XDG_CONFIG_HOME="${WORKDIR}/config" ODH_TEST_HELM_LOG="${HELM_LOG}" \
 		OPENSHELL_BIN="${MOCK_BIN}/openshell" \

@@ -49,3 +49,8 @@ description = "Test ODH deploy script image-digest plumbing without a cluster"
 run = "odh/scripts/tests/test-openshell-deploy-from-quay.sh"
 run_windows = "echo Skipping test:odh-deploy-digests: the Unix Quay deploy script does not apply on Windows."
 hide = true
+
+["test:odh-generic-fetcher"]
+description = "Test ODH generic-fetcher checksum synchronization"
+run = "python3 deploy/konflux/e2e-odh/sync-generic-fetcher_test.py"
+hide = true
