@@ -161,6 +161,11 @@ pub struct GatewayFileSection {
     /// Enable plaintext HTTP routing for loopback sandbox service URLs.
     #[serde(default)]
     pub enable_loopback_service_http: Option<bool>,
+    /// Hostname format for exposed sandbox services: `readable` (default) or
+    /// `hashed` (opaque one-label hostnames discriminated by the gateway
+    /// installation name).
+    #[serde(default)]
+    pub service_hostname_format: Option<openshell_core::config::ServiceHostnameFormat>,
     /// Enable the WebSocket tunnel for an authenticated edge proxy.
     #[serde(default)]
     pub enable_websocket_tunnel: Option<bool>,
@@ -194,6 +199,9 @@ pub struct GatewayFileSection {
     pub otlp: Option<OtlpConfig>,
     #[serde(default)]
     pub ocsf_log: Option<OcsfLogConfig>,
+    /// Tuning of the shared supervisor pool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervisor_pool: Option<SupervisorPoolConfig>,
 
     // ── Disallowed-in-file fields ────────────────────────────────────────
     //
@@ -202,6 +210,25 @@ pub struct GatewayFileSection {
     // rejected in [`load`].
     #[serde(default)]
     pub database_url: Option<String>,
+}
+
+/// `[openshell.gateway.supervisor_pool]`: optional tuning of the shared
+/// supervisor pool.
+///
+/// The shared supervisor always runs as a pool that the gateway coordinates
+/// for high availability: it places each sandbox instance on a live member by
+/// consistent hash, records its owner durably, and moves the instances of a
+/// failed or leaving member to another member, which adopts their running
+/// workloads. Without this table the defaults apply.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SupervisorPoolConfig {
+    /// Seconds a sandbox runtime keeps its workload frozen after losing its
+    /// supervisor before terminating it, from 30 to 300. The pool's
+    /// supervisors offer it to each runtime; unset offers
+    /// [`openshell_supervisor_control::POOL_RECOVERY_TIMEOUT_SECS`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recovery_timeout_secs: Option<u32>,
 }
 
 /// Gateway listener TLS fields accepted in `gateway.toml`.
@@ -440,6 +467,22 @@ pub struct SupervisorFileSection {
     /// operator-owned and changes require a gateway restart.
     #[serde(default)]
     pub middleware: Vec<MiddlewareServiceFileConfig>,
+    /// Shared network-supervisor configuration. This is intentionally outside
+    /// the compute-driver tables so every supported driver consumes the same
+    /// startup contract.
+    #[serde(default)]
+    pub network: SupervisorNetworkFileSection,
+}
+
+/// `[openshell.supervisor.network]` configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SupervisorNetworkFileSection {
+    /// Gateway-local pre-assembled PEM bundle whose certificates augment the
+    /// supervisor's destination trust roots. The gateway validates and stages
+    /// this single file during startup before any compute driver is constructed.
+    #[serde(default)]
+    pub additional_ca_bundle: Option<PathBuf>,
 }
 
 impl ConfigFile {
@@ -815,6 +858,20 @@ fn parse_and_validate(path: &Path, contents: &str) -> Result<ConfigFile, ConfigF
             message: "omit the field to use default encrypted gateway credential storage, or specify exactly one external credential driver",
         });
     }
+    if file
+        .openshell
+        .gateway
+        .supervisor_pool
+        .and_then(|pool| pool.recovery_timeout_secs)
+        .is_some_and(|timeout| {
+            !openshell_supervisor_control::POOL_RECOVERY_TIMEOUT_RANGE.contains(&timeout)
+        })
+    {
+        return Err(ConfigFileError::InvalidValue {
+            field: "openshell.gateway.supervisor_pool.recovery_timeout_secs",
+            message: "must be between 30 and 300 seconds",
+        });
+    }
     if let Some((name, _)) = file
         .openshell
         .drivers
@@ -822,6 +879,19 @@ fn parse_and_validate(path: &Path, contents: &str) -> Result<ConfigFile, ConfigF
         .find(|(_, value)| !value.is_table())
     {
         return Err(ConfigFileError::InvalidDriverTable { name: name.clone() });
+    }
+    if file
+        .openshell
+        .supervisor
+        .network
+        .additional_ca_bundle
+        .as_ref()
+        .is_some_and(|path| path.as_os_str().is_empty())
+    {
+        return Err(ConfigFileError::InvalidValue {
+            field: "openshell.supervisor.network.additional_ca_bundle",
+            message: "path must not be empty",
+        });
     }
 
     openshell_core::isolation_registration::validate_registrations(
@@ -1116,6 +1186,32 @@ compute_driver = 42
 
         let serialized = toml::to_string(&file).expect("config serializes");
         assert!(serialized.contains("compute_driver = \"docker\""));
+    }
+
+    #[test]
+    fn service_hostname_format_parses_and_serializes() {
+        let file = toml::from_str::<ConfigFile>(
+            r#"
+[openshell]
+version = 2
+
+[openshell.gateway]
+service_hostname_format = "hashed"
+"#,
+        )
+        .expect("service hostname format parses");
+
+        assert_eq!(
+            file.openshell.gateway.service_hostname_format,
+            Some(openshell_core::config::ServiceHostnameFormat::Hashed)
+        );
+
+        let serialized = toml::to_string(&file).expect("config serializes");
+        assert!(serialized.contains("service_hostname_format = \"hashed\""));
+
+        let unset = toml::from_str::<ConfigFile>("[openshell]\nversion = 2\n")
+            .expect("file without the field parses");
+        assert!(unset.openshell.gateway.service_hostname_format.is_none());
     }
 
     #[test]
@@ -1461,6 +1557,65 @@ allow_unauthenticated_users = true
     }
 
     #[test]
+    fn parses_supervisor_network_additional_ca_bundle() {
+        let tmp = write_tmp(
+            r#"
+[openshell.supervisor.network]
+additional_ca_bundle = "/etc/openshell/ca-bundle.crt"
+"#,
+        );
+
+        let file = load(tmp.path()).expect("network supervisor config parses");
+        assert_eq!(
+            file.openshell.supervisor.network.additional_ca_bundle,
+            Some(PathBuf::from("/etc/openshell/ca-bundle.crt"))
+        );
+    }
+
+    #[test]
+    fn supervisor_network_additional_ca_bundle_defaults_to_unset() {
+        let file: ConfigFile = toml::from_str("[openshell.supervisor]\n").expect("valid config");
+        assert!(
+            file.openshell
+                .supervisor
+                .network
+                .additional_ca_bundle
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn supervisor_network_rejects_unknown_fields() {
+        let tmp = write_tmp(
+            r"
+[openshell.supervisor.network]
+unknown = true
+",
+        );
+        assert!(matches!(
+            load(tmp.path()),
+            Err(ConfigFileError::Parse { .. })
+        ));
+    }
+
+    #[test]
+    fn supervisor_network_rejects_empty_ca_bundle_path() {
+        let tmp = write_tmp(
+            r#"
+[openshell.supervisor.network]
+additional_ca_bundle = ""
+"#,
+        );
+        let error = load(tmp.path()).expect_err("empty source paths must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("openshell.supervisor.network.additional_ca_bundle")
+        );
+        assert!(error.to_string().contains("must not be empty"));
+    }
+
+    #[test]
     fn parses_supervisor_middleware_registration() {
         let certificate =
             openshell_crypto::pki::generate_simple_self_signed(vec!["localhost".to_string()])
@@ -1793,6 +1948,50 @@ database_lock_max_connections = 0
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn parses_the_supervisor_pool_tuning() {
+        let pool = |table: &str| {
+            let tmp = write_tmp(&format!("[openshell.gateway.supervisor_pool]\n{table}"));
+            load(tmp.path()).map(|file| file.openshell.gateway.supervisor_pool)
+        };
+        let configured = pool("recovery_timeout_secs = 90\n").unwrap().unwrap();
+        assert_eq!(configured.recovery_timeout_secs, Some(90));
+        assert_eq!(pool("").unwrap().unwrap().recovery_timeout_secs, None);
+        let tmp = write_tmp("[openshell.gateway]\n");
+        assert!(
+            load(tmp.path())
+                .unwrap()
+                .openshell
+                .gateway
+                .supervisor_pool
+                .is_none()
+        );
+        // Recovery stays bounded, and unknown keys, including the removed
+        // `enabled` switch, are refused.
+        assert_eq!(
+            pool("recovery_timeout_secs = 30\n")
+                .unwrap()
+                .unwrap()
+                .recovery_timeout_secs,
+            Some(30)
+        );
+        for out_of_range in ["10", "29", "301"] {
+            assert!(matches!(
+                pool(&format!("recovery_timeout_secs = {out_of_range}\n")),
+                Err(ConfigFileError::InvalidValue {
+                    field: "openshell.gateway.supervisor_pool.recovery_timeout_secs",
+                    ..
+                })
+            ));
+        }
+        for unknown in ["enabled = true\n", "high_availability = true\n"] {
+            assert!(
+                matches!(pool(unknown), Err(ConfigFileError::Parse { .. })),
+                "{unknown}"
+            );
+        }
     }
 
     #[test]
