@@ -9,9 +9,11 @@
 import base64
 import copy
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import patch
 
@@ -184,12 +186,41 @@ class InstallTests(unittest.TestCase):
         for digest in (
             "sha256:abc123",
             f"sha256:{'g' * 64}",
+            f"sha256:{'A' * 64}",
             f"sha512:{'a' * 64}",
         ):
             with self.subTest(digest=digest):
                 self.config["gateway"]["images"]["gateway"]["digest"] = digest
                 with self.assertRaisesRegex(ValueError, "digest must be sha256"):
                     self.load()
+
+    def test_empty_image_digest_allows_tag_fallback(self):
+        image = self.config["gateway"]["images"]["gateway"]
+        image["digest"] = ""
+        image["tag"] = "v0.1.3-rhaiv.3"
+        gateway, _ = installer.chart_values(self.load())
+        self.assertEqual(gateway["gateway"]["image"], image)
+
+    def test_warns_when_old_dashboard_chart_cannot_pass_custom_user_role(self):
+        self.config["dashboard"]["version"] = "0.1.1"
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            self.load()
+        self.assertIn("charts before 0.1.2", stderr.getvalue())
+        self.assertIn("openshell-user", stderr.getvalue())
+
+        self.config["oidc"]["user_role"] = "user"
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            self.load()
+        self.assertEqual(stderr.getvalue(), "")
+
+        self.config["dashboard"]["version"] = "0.1.2"
+        self.config["oidc"]["user_role"] = "openshell-user"
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            self.load()
+        self.assertEqual(stderr.getvalue(), "")
 
     def test_yaml_overlays_merge_in_order_and_preserve_managed_values(self):
         (self.root / "base.yaml").write_text(
@@ -383,18 +414,31 @@ class InstallTests(unittest.TestCase):
         # the gateway enforces.
         for role in ("adminRole", "userRole"):
             self.assertEqual(dashboard["oidc"][role], gateway["server"]["oidc"][role])
-        self.assertEqual(
-            dashboard["dashboard"]["image"]["repository"],
-            "opendatahub/odh-openshell-dashboard",
-        )
-        for component, repository in (
-            ("gateway", "opendatahub/odh-openshell-gateway"),
-            ("supervisor", "opendatahub/odh-openshell-supervisor"),
-            ("sandboxRuntime", "opendatahub/odh-openshell-sandbox"),
-        ):
-            self.assertEqual(gateway[component]["image"]["repository"], repository)
         self.assertFalse(gateway["server"]["tls"]["enableMtls"])
         self.assertIsNone(gateway["securityContext"]["runAsUser"])
+
+    def test_image_overrides_project_into_chart_values(self):
+        for name, component, digit in (
+            ("gateway", "gateway", "a"),
+            ("gateway", "supervisor", "b"),
+            ("gateway", "sandboxRuntime", "c"),
+            ("dashboard", "dashboard", "d"),
+        ):
+            self.config[name]["images"][component] = {
+                "registry": "registry.example.com",
+                "repository": f"team/{component.lower()}",
+                "digest": f"sha256:{digit * 64}",
+            }
+        gateway, dashboard = installer.chart_values(self.load())
+        for name, component, values in (
+            ("gateway", "gateway", gateway),
+            ("gateway", "supervisor", gateway),
+            ("gateway", "sandboxRuntime", gateway),
+            ("dashboard", "dashboard", dashboard),
+        ):
+            self.assertEqual(
+                values[component]["image"], self.config[name]["images"][component]
+            )
 
     def test_existing_admin_namespace_preserves_metadata_and_targets_releases(self):
         self.config["namespace"] = "research-team"

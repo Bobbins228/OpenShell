@@ -202,11 +202,11 @@ def load_config(path, namespace=None):
                 all(isinstance(value, str) for value in image.values()),
                 "Image values must be strings",
             )
-            if "digest" in image:
+            if image.get("digest"):
                 require(
-                    re.fullmatch(r"sha256:[0-9a-fA-F]{64}", image["digest"]),
+                    re.fullmatch(r"sha256:[0-9a-f]{64}", image["digest"]),
                     f"{name}.images.{component}.digest must be sha256: followed by "
-                    "64 hexadecimal characters",
+                    "64 lowercase hexadecimal characters",
                 )
     require(
         config["gateway"]["host"] != config["dashboard"]["host"],
@@ -286,6 +286,16 @@ def load_config(path, namespace=None):
                 f"Missing or empty oidc.{key}",
             )
             oidc[key] = str(source)
+    dashboard_release = config["dashboard"]["version"].split("-", 1)[0].split("+", 1)[0]
+    dashboard_version = tuple(int(part) for part in dashboard_release.split("."))
+    if dashboard_version < (0, 1, 2) and oidc["user_role"] != "user":
+        print(
+            "Warning: dashboard charts before 0.1.2 do not pass oidc.userRole. "
+            "Dashboard builds with the entitlement page may deny users with only "
+            f"the {oidc['user_role']!r} role. Pair chart 0.1.2 or later with a "
+            "matching image, or use a pre-entitlement dashboard build.",
+            file=sys.stderr,
+        )
     return config
 
 

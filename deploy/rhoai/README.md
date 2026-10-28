@@ -86,11 +86,15 @@ cp deploy/rhoai/config.example.json "$HOME/.config/openshell-rhoai/config.json"
 ```
 
 Edit the copy. Replace both version placeholders with exact published SemVer
-chart versions, and set the namespace, kubeconfig context, DNS names, and OIDC
-claims. The two versions need not have the same patch number. The dashboard OCI
+chart versions and all four image digest placeholders with verified digests.
+Set the namespace, kubeconfig context, DNS names, and OIDC claims. The two
+versions need not have the same patch number. The dashboard OCI
 reference currently points to its upstream publisher, not an ODH chart registry,
 and that chart's default image is the upstream publisher's build. Both chart
 references are configurable for mirrors.
+When changing an image repository or removing a digest, set an explicit digest
+or published tag for that repository; the charts' default version tags may not
+exist in ODH repositories or mirrors.
 
 The example sets `dashboard.images.dashboard` to the ODH build,
 `quay.io/opendatahub/odh-openshell-dashboard`. Konflux builds it from each commit
@@ -103,10 +107,15 @@ dashboard chart version, and do not use the moving `odh-stable` tag:
 | `0.1.2` | `ae76c31` | `sha256:cfb3b592c5909c7c1a5d5622f98a20bf8c503554d53b3441abb189140254450b` |
 | `0.1.1` | `03995be` | `sha256:77c7434a172800ce561b2910b4964728f28ada39d77f26d7039be60ed3663ece` |
 
+These ODH dashboard builds are amd64-only. Schedule the dashboard pod on an
+amd64 node in arm64 or mixed-architecture clusters.
+
 Builds from fork commit `1c45566` onward add the dashboard's entitlement page,
 which reads the user role the installer passes as `oidc.userRole`. Chart `0.1.2`
 and later pass it to the dashboard. Chart `0.1.1` does not, so a newer build on
 it refuses users whose only role is `user_role` unless that role is named `user`.
+The installer warns about this combination when using a chart below `0.1.2`
+with a custom user role.
 
 The example also sets `gateway.images` to the ODH builds of the gateway,
 supervisor, and sandbox runtime (`quay.io/opendatahub/odh-openshell-gateway`,
