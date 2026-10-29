@@ -202,6 +202,12 @@ def load_config(path, namespace=None):
                 all(isinstance(value, str) for value in image.values()),
                 "Image values must be strings",
             )
+            if image.get("digest"):
+                require(
+                    re.fullmatch(r"sha256:[0-9a-f]{64}", image["digest"]),
+                    f"{name}.images.{component}.digest must be sha256: followed by "
+                    "64 lowercase hexadecimal characters",
+                )
     require(
         config["gateway"]["host"] != config["dashboard"]["host"],
         "Gateway and dashboard need distinct hosts",
@@ -280,6 +286,20 @@ def load_config(path, namespace=None):
                 f"Missing or empty oidc.{key}",
             )
             oidc[key] = str(source)
+    dashboard_release = config["dashboard"]["version"].split("+", 1)[0]
+    dashboard_core, prerelease_separator, _ = dashboard_release.partition("-")
+    dashboard_version = tuple(int(part) for part in dashboard_core.split("."))
+    before_role_chart = dashboard_version < (0, 1, 2) or (
+        dashboard_version == (0, 1, 2) and bool(prerelease_separator)
+    )
+    if before_role_chart and oidc["user_role"] != "user":
+        print(
+            "Warning: dashboard charts before 0.1.2 may not pass oidc.userRole. "
+            "Dashboard builds with the entitlement page may deny users with only "
+            f"the {oidc['user_role']!r} role. Pair chart 0.1.2 or later with a "
+            "matching image, or use a pre-entitlement dashboard build.",
+            file=sys.stderr,
+        )
     return config
 
 
@@ -337,6 +357,7 @@ def chart_values(config):
             "audience": oidc["audience"],
             "rolesClaim": oidc["roles_claim"],
             "adminRole": oidc["admin_role"],
+            "userRole": oidc["user_role"],
             "codeChallengeMethod": "S256",
             "allowedGroups": oidc.get("allowed_groups", []),
             "allowedRoles": oidc.get("allowed_roles", []),
